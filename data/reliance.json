@@ -1,0 +1,1148 @@
+{
+  "schemaVersion": 1,
+  "researchedAt": "2026-10-29",
+  "currency": "INR",
+  "unit": "crore",
+  "company": {
+    "id": "reliance",
+    "ticker": "RELIANCE",
+    "name": "Reliance Industries Limited",
+    "exchange": "NSE",
+    "bseCode": "500325",
+    "isin": "INE002A01018",
+    "sector": "Diversified",
+    "country": "India"
+  },
+  "coverage": {
+    "annualReport": "FY2025–26",
+    "annualYears": [
+      "FY2024",
+      "FY2025",
+      "FY2026"
+    ],
+    "latestAvailableCall": "Q1 FY2027",
+    "latestCallDate": "2026-07-17",
+    "latestVerifiedQuarter": "2026-06-30",
+    "status": "Verified historical primary-source snapshot",
+    "limitation": "Latest means latest verified in this corpus, not a claim of live or complete exchange coverage. No current stock price is seeded. FY2026 annual report includes one-off listed investment gains. Q1 FY2027 recurring YoY comparisons exclude a prior-period investment sale gain."
+  },
+  "documents": [
+    {
+      "id": "ar26",
+      "title": "Integrated Annual Report 2025–26",
+      "type": "annual_report",
+      "period": "FY2026",
+      "publishedAt": null,
+      "statementApprovedAt": "2026-04-24",
+      "url": "https://www.ril.com/ar2025-26/RIL_IAR%202026.pdf",
+      "pageCount": 147,
+      "allowedForResearch": true,
+      "note": "PDF contains two-page spreads. pdfPage is one-based viewer page; page labels are printed pages."
+    },
+    {
+      "id": "ar26-financial",
+      "title": "Annual report · Financial performance and review",
+      "type": "annual_report",
+      "period": "FY2026",
+      "publishedAt": null,
+      "url": "https://www.ril.com/ar2025-26/financial-performance-and-review.html",
+      "allowedForResearch": true
+    },
+    {
+      "id": "ar26-risk",
+      "title": "Annual report · Risk and governance",
+      "type": "annual_report",
+      "period": "FY2026",
+      "publishedAt": null,
+      "url": "https://www.ril.com/ar2025-26/risk-and-governance.html",
+      "allowedForResearch": true
+    },
+    {
+      "id": "ar26-retail",
+      "title": "Annual report · Retail",
+      "type": "annual_report",
+      "period": "FY2026",
+      "publishedAt": null,
+      "url": "https://www.ril.com/ar2025-26/retail.html",
+      "allowedForResearch": true
+    },
+    {
+      "id": "ar26-digital",
+      "title": "Annual report · Digital services",
+      "type": "annual_report",
+      "period": "FY2026",
+      "publishedAt": null,
+      "url": "https://www.ril.com/ar2025-26/digital-services.html",
+      "allowedForResearch": true
+    },
+    {
+      "id": "ar26-o2c",
+      "title": "Annual report · Oil to chemicals",
+      "type": "annual_report",
+      "period": "FY2026",
+      "publishedAt": null,
+      "url": "https://www.ril.com/ar2025-26/oil-to-chemicals.html",
+      "allowedForResearch": true
+    },
+    {
+      "id": "ar26-oilgas",
+      "title": "Annual report · Oil and gas",
+      "type": "annual_report",
+      "period": "FY2026",
+      "publishedAt": null,
+      "url": "https://www.ril.com/ar2025-26/oil-and-gas.html",
+      "allowedForResearch": true
+    },
+    {
+      "id": "call-q1fy27",
+      "title": "Q1 FY2027 · Management call transcript",
+      "type": "earnings_call",
+      "period": "Q1 FY2027",
+      "publishedAt": "2026-07-17",
+      "url": "https://www.ril.com/investors/events-presentations",
+      "allowedForResearch": true,
+      "note": "Use the Q1 FY27 transcript, not the AGM transcript also embedded on this page."
+    },
+    {
+      "id": "call-q4fy26",
+      "title": "Q4 FY2026 · Media and analyst call transcript",
+      "type": "earnings_call",
+      "period": "Q4 FY2026",
+      "publishedAt": "2026-04-24",
+      "url": "https://www.ril.com/sites/default/files/2026-04/24042026_RIL_Media_Analyst_Call_Transcript_Q4_FY2026.pdf",
+      "pageCount": 30,
+      "allowedForResearch": true
+    },
+    {
+      "id": "call-q3fy26",
+      "title": "Q3 FY2026 · Media and analyst call transcript",
+      "type": "earnings_call",
+      "period": "Q3 FY2026",
+      "publishedAt": "2026-01-16",
+      "url": "https://www.ril.com/sites/default/files/2026-01/RIL_Media_Analyst_Call_Transcript_Q3_FY2026.pdf",
+      "pageCount": 37,
+      "allowedForResearch": true
+    },
+    {
+      "id": "results-q1fy27",
+      "title": "Q1 FY2027 · Financial and operational results",
+      "type": "results_filing",
+      "period": "Q1 FY2027",
+      "publishedAt": "2026-07-17",
+      "url": "https://rilstaticasset.akamaized.net/sites/default/files/2026-07/Media_Release_RIL_Q1_FY2026-27_Financial_and_Operational_Performance.pdf",
+      "pageCount": 34,
+      "allowedForResearch": false,
+      "note": "Push results-card source; do not silently include it in the pull annual-report/transcript corpus."
+    },
+    {
+      "id": "ar26-overview",
+      "title": "Annual report · Company and segment overview",
+      "type": "annual_report",
+      "period": "FY2026",
+      "publishedAt": null,
+      "url": "https://www.ril.com/ar2025-26/index.html",
+      "allowedForResearch": true
+    }
+  ],
+  "evidence": [
+    {
+      "id": "e-business",
+      "documentId": "ar26-overview",
+      "section": "Digital services · Business overview",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/ar2025-26/index.html",
+      "kind": "paraphrase",
+      "text": "Reliance combines energy and materials, digital connectivity, retail, media, and emerging green-energy operations. Jio reported over 524 million customers at March 2026. Its businesses include mobile connectivity, home broadband and digital services.",
+      "keywords": [
+        "business",
+        "snapshot",
+        "what",
+        "does",
+        "company",
+        "segments",
+        "jio",
+        "telecom",
+        "digital",
+        "broadband"
+      ],
+      "facts": {
+        "jioCustomersMillion": 524
+      },
+      "basis": "Group business overview; customer count at March 2026"
+    },
+    {
+      "id": "e-annual",
+      "documentId": "ar26",
+      "section": "10-year financial highlights · Consolidated",
+      "page": "6",
+      "pdfPage": 5,
+      "url": "https://www.ril.com/ar2025-26/RIL_IAR%202026.pdf#page=5",
+      "kind": "fact_extract",
+      "text": "Consolidated annual figures, ₹ crore. FY2024: gross revenue 1,000,122; EBITDA 178,290; profit for year 79,020. FY2025: 1,071,174; 183,422; 81,309. FY2026: 1,175,919; 207,911; 95,754. EBITDA is before exceptional items; profit includes associates/JVs and non-controlling interests.",
+      "keywords": [
+        "financial",
+        "trajectory",
+        "annual",
+        "year",
+        "growth",
+        "revenue",
+        "ebitda",
+        "pat",
+        "profit",
+        "trend"
+      ],
+      "facts": {
+        "FY2024": {
+          "grossRevenue": 1000122,
+          "ebitda": 178290,
+          "pat": 79020
+        },
+        "FY2025": {
+          "grossRevenue": 1071174,
+          "ebitda": 183422,
+          "pat": 81309
+        },
+        "FY2026": {
+          "grossRevenue": 1175919,
+          "ebitda": 207911,
+          "pat": 95754
+        }
+      },
+      "basis": "Consolidated; gross revenue includes GST; ₹ crore"
+    },
+    {
+      "id": "e-income",
+      "documentId": "ar26",
+      "section": "Consolidated statement of profit and loss",
+      "page": "198–199",
+      "pdfPage": 101,
+      "url": "https://www.ril.com/ar2025-26/RIL_IAR%202026.pdf#page=101",
+      "kind": "fact_extract",
+      "text": "₹ crore, FY2026 / FY2025. Gross revenue 1,175,919 / 1,071,174. GST 100,244 / 91,038. Net revenue 1,075,675 / 980,136. PBT before associates/JVs 123,162 / 106,017. PAT before associates/JVs 95,610 / 80,787; profit including associates/JVs 95,754 / 81,309; attributable to owners 80,775 / 69,648. EPS ₹59.69 / ₹51.47.",
+      "keywords": [
+        "revenue",
+        "gst",
+        "net",
+        "gross",
+        "pbt",
+        "pat",
+        "profit",
+        "tax",
+        "eps",
+        "earnings",
+        "share",
+        "consolidated",
+        "standalone"
+      ],
+      "facts": {
+        "FY2026": {
+          "grossRevenue": 1175919,
+          "gst": 100244,
+          "netRevenue": 1075675,
+          "pbt": 123162,
+          "patBeforeAssociates": 95610,
+          "pat": 95754,
+          "patOwners": 80775,
+          "eps": 59.69
+        },
+        "FY2025": {
+          "grossRevenue": 1071174,
+          "gst": 91038,
+          "netRevenue": 980136,
+          "pbt": 106017,
+          "patBeforeAssociates": 80787,
+          "pat": 81309,
+          "patOwners": 69648,
+          "eps": 51.47
+        }
+      },
+      "basis": "Consolidated annual; ₹ crore except EPS"
+    },
+    {
+      "id": "e-cashflow",
+      "documentId": "ar26",
+      "section": "Consolidated statement of cash flows",
+      "page": "202",
+      "pdfPage": 103,
+      "url": "https://www.ril.com/ar2025-26/RIL_IAR%202026.pdf#page=103",
+      "kind": "fact_extract",
+      "text": "₹ crore, FY2026 / FY2025: operating cash flow after taxes 192,113 / 178,703. Cash expenditure on property, equipment, spectrum and intangible assets 122,916 / 139,967. Operating cash flow less that cash expenditure is 69,197 / 38,736, a FINN-derived cash-flow measure, not company-reported capex. Reported capex uses a different scope.",
+      "keywords": [
+        "cash",
+        "quality",
+        "cfo",
+        "cashflow",
+        "cash-flow",
+        "operations",
+        "cash conversion",
+        "fcf",
+        "free cash flow",
+        "capex",
+        "cash profits"
+      ],
+      "facts": {
+        "FY2026": {
+          "cfo": 192113,
+          "cashCapex": 122916,
+          "derivedFcf": 69197
+        },
+        "FY2025": {
+          "cfo": 178703,
+          "cashCapex": 139967,
+          "derivedFcf": 38736
+        }
+      },
+      "basis": "Consolidated cash flows; annual; ₹ crore; cash capex includes spectrum and intangibles"
+    },
+    {
+      "id": "e-debt",
+      "documentId": "ar26",
+      "section": "Note 35 · Capital management / net gearing",
+      "page": "246–247",
+      "pdfPage": 125,
+      "url": "https://www.ril.com/ar2025-26/RIL_IAR%202026.pdf#page=125",
+      "kind": "fact_extract",
+      "text": "₹ crore at March 2026 / March 2025: gross debt 374,421 / 347,530; cash and marketable securities 249,704 / 230,447; net debt 124,717 / 117,083. Cash and cash equivalents alone are 145,977 / 106,502. Net gearing 0.14 / 0.14. The wider liquidity basket must not be labelled cash alone.",
+      "keywords": [
+        "debt",
+        "leverage",
+        "balance sheet",
+        "cash",
+        "liquidity",
+        "net debt",
+        "gross debt",
+        "gearing",
+        "securities",
+        "borrowing"
+      ],
+      "facts": {
+        "FY2026": {
+          "grossDebt": 374421,
+          "cashAndMarketableSecurities": 249704,
+          "cash": 145977,
+          "netDebt": 124717,
+          "netGearing": 0.14
+        },
+        "FY2025": {
+          "grossDebt": 347530,
+          "cashAndMarketableSecurities": 230447,
+          "cash": 106502,
+          "netDebt": 117083,
+          "netGearing": 0.14
+        }
+      },
+      "basis": "Consolidated point-in-time; ₹ crore; net gearing uses equity attributable to owners"
+    },
+    {
+      "id": "e-working-capital",
+      "documentId": "ar26",
+      "section": "Consolidated cash flow · Working-capital movements",
+      "page": "202",
+      "pdfPage": 103,
+      "url": "https://www.ril.com/ar2025-26/RIL_IAR%202026.pdf#page=103",
+      "kind": "fact_extract",
+      "text": "FY2026 cash-flow movements, ₹ crore: receivables −53,322; inventories −20,790; trade and other payables +86,609. Net working-capital release +12,497, versus +23,724 in FY2025. These cash-flow changes include trade and other items and cannot directly establish receivable days or a complete working-capital cycle.",
+      "keywords": [
+        "working",
+        "capital",
+        "inventory",
+        "inventories",
+        "receivable",
+        "payable",
+        "cycle",
+        "cash conversion",
+        "cash"
+      ],
+      "facts": {
+        "FY2026": {
+          "receivablesMovement": -53322,
+          "inventoriesMovement": -20790,
+          "payablesMovement": 86609,
+          "workingCapitalMovement": 12497
+        },
+        "FY2025": {
+          "receivablesMovement": -17837,
+          "inventoriesMovement": 3134,
+          "payablesMovement": 38427,
+          "workingCapitalMovement": 23724
+        }
+      },
+      "basis": "Consolidated cash-flow movements; annual; ₹ crore"
+    },
+    {
+      "id": "e-contingent",
+      "documentId": "ar26",
+      "section": "Note 34 · Contingent liabilities and commitments",
+      "page": "244–245",
+      "pdfPage": 124,
+      "url": "https://www.ril.com/ar2025-26/RIL_IAR%202026.pdf#page=124",
+      "kind": "fact_extract",
+      "text": "At March 2026, ₹ crore: disputed claims—joint arrangements 1,692, others 3,840; guarantees—joint arrangements 1,318, associates/JVs/others 5,799. Unexecuted capital commitments—joint arrangements 4,875, others 61,642. Separate gas-migration and other litigation is discussed without a complete exposure estimate. Contingent amounts are not recognised debt or a forecast loss.",
+      "keywords": [
+        "contingent",
+        "liabilities",
+        "litigation",
+        "legal",
+        "claims",
+        "guarantee",
+        "commitments",
+        "risk",
+        "disputes"
+      ],
+      "facts": {
+        "claimsJointArrangements": 1692,
+        "claimsOthers": 3840,
+        "guaranteesJointArrangements": 1318,
+        "guaranteesOthers": 5799,
+        "capitalCommitmentsJointArrangements": 4875,
+        "capitalCommitmentsOthers": 61642
+      },
+      "basis": "Consolidated disclosures at March 2026; ₹ crore"
+    },
+    {
+      "id": "e-rpt",
+      "documentId": "ar26",
+      "section": "Consolidated notes · Related-party disclosures; Governance report",
+      "page": "62–63; 234–243",
+      "pdfPage": 119,
+      "url": "https://www.ril.com/ar2025-26/RIL_IAR%202026.pdf#page=119",
+      "kind": "paraphrase",
+      "text": "The annual report discloses major related-party transactions and balances, including associates and joint ventures. Its governance report says no materially significant related-party transactions potentially conflicted with the company’s interests. That is management’s disclosure; it is not proof that all related-party dealings are risk-free.",
+      "keywords": [
+        "related",
+        "party",
+        "rpt",
+        "governance",
+        "promoter",
+        "transactions",
+        "conflict"
+      ],
+      "facts": {},
+      "basis": "Management disclosure plus consolidated related-party transaction notes"
+    },
+    {
+      "id": "e-audit",
+      "documentId": "ar26",
+      "section": "Consolidated independent auditor’s report · Opinion",
+      "page": "184",
+      "pdfPage": 94,
+      "url": "https://www.ril.com/ar2025-26/RIL_IAR%202026.pdf#page=94",
+      "kind": "paraphrase",
+      "text": "The consolidated audit opinion is unmodified: auditors say the statements fairly present the group’s financial position and results under Ind AS. Read the key audit matters and other matters as well. An unmodified opinion does not guarantee the absence of commercial risk or future misstatement.",
+      "keywords": [
+        "audit",
+        "auditor",
+        "qualification",
+        "qualified",
+        "opinion",
+        "red flags",
+        "accounting"
+      ],
+      "facts": {
+        "opinion": "unmodified"
+      },
+      "basis": "Consolidated independent audit opinion; statements at March 2026"
+    },
+    {
+      "id": "e-risk",
+      "documentId": "ar26-risk",
+      "section": "Risks and response · Commodity, treasury, operational and regulatory risks",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/ar2025-26/risk-and-governance.html",
+      "kind": "paraphrase",
+      "text": "Disclosed risks include commodity-price and supply volatility, foreign-currency liabilities, refinancing and interest rates, regulation, cybersecurity, climate transition, and operational safety. RIL describes diversified sourcing, hedging, liquidity reserves and controls as mitigants. These are company-described controls, not assurance that the risks disappear.",
+      "keywords": [
+        "risk",
+        "risks",
+        "bear",
+        "threat",
+        "commodity",
+        "forex",
+        "currency",
+        "regulation",
+        "cybersecurity",
+        "climate",
+        "safety",
+        "treasury"
+      ],
+      "facts": {},
+      "basis": "Annual-report enterprise risk disclosures"
+    },
+    {
+      "id": "e-segments",
+      "documentId": "ar26-financial",
+      "section": "Segment performance and capex",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/ar2025-26/financial-performance-and-review.html",
+      "kind": "fact_extract",
+      "text": "FY2026 segment EBITDA changes: Digital Services +17.8%, Retail +7.7%, Media & Entertainment +218.7%, O2C +10.1%, Oil & Gas −10.1%. Reported capex ₹144,271 crore versus ₹131,107 crore. O2C and New Energy growth projects, Digital Services and Retail were investment destinations. Different legal-entity and segment definitions can produce different totals.",
+      "keywords": [
+        "segment",
+        "segments",
+        "capex",
+        "capital expenditure",
+        "growth",
+        "digital",
+        "retail",
+        "o2c",
+        "oil",
+        "gas",
+        "media"
+      ],
+      "facts": {
+        "capexFY2026": 144271,
+        "capexFY2025": 131107,
+        "segments": [
+          {
+            "id": "o2c",
+            "revenue": 662401,
+            "ebitda": 60546,
+            "revenueGrowthPct": 5.7,
+            "ebitdaGrowthPct": 10.1
+          },
+          {
+            "id": "digital",
+            "revenue": 176164,
+            "ebitda": 76560,
+            "revenueGrowthPct": 14.3,
+            "ebitdaGrowthPct": 17.8
+          },
+          {
+            "id": "retail",
+            "revenue": 371085,
+            "ebitda": 27034,
+            "revenueGrowthPct": 12.1,
+            "ebitdaGrowthPct": 7.7
+          },
+          {
+            "id": "oilgas",
+            "revenue": 23861,
+            "ebitda": 19050,
+            "revenueGrowthPct": -5.4,
+            "ebitdaGrowthPct": -10.1
+          },
+          {
+            "id": "media",
+            "revenue": 40682,
+            "ebitda": 5842,
+            "revenueGrowthPct": 96.6,
+            "ebitdaGrowthPct": 218.7
+          }
+        ]
+      },
+      "basis": "Group segment EBITDA growth; company-reported capex"
+    },
+    {
+      "id": "e-call-q1",
+      "documentId": "call-q1fy27",
+      "section": "V Srikanth · Group performance · 00:00:01–00:09:45",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/investors/events-presentations#webcast-sec",
+      "kind": "paraphrase",
+      "text": "In Q1 FY2027 management described gross revenue growth of about 25%, recurring EBITDA growth of about 10% and recurring profit growth of about 6%. It removes the prior year’s listed-investment gain to make that recurring comparison. This is a comparison adjustment, not a newly generated operating profit.",
+      "keywords": [
+        "quarter",
+        "latest",
+        "changed",
+        "q1",
+        "2027",
+        "earnings",
+        "recurring",
+        "ebitda",
+        "profit",
+        "narrative",
+        "numbers",
+        "one-off",
+        "investment"
+      ],
+      "facts": {
+        "grossRevenue": 340257,
+        "ebitda": 54067,
+        "pat": 23196
+      },
+      "basis": "Quarter ended June 2026; consolidated; recurring YoY adjustment"
+    },
+    {
+      "id": "e-jio",
+      "documentId": "call-q1fy27",
+      "section": "Anshuman Thakur · Jio Platforms · 00:09:51–00:20:53",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/investors/events-presentations#webcast-sec",
+      "kind": "fact_extract",
+      "text": "Q1 FY2027 Jio Platforms: revenue ₹39,173 crore; EBITDA ₹20,865 crore; margin 53.3%; EBITDA +15.1% YoY. Connectivity subscribers 533.3 million; 5G users 285 million; home broadband 28.6 million. ARPU ₹215.6 per user per month. JPL figures should not be substituted for the broader Digital Services segment.",
+      "keywords": [
+        "jio",
+        "arpu",
+        "subscribers",
+        "telecom",
+        "digital",
+        "margin",
+        "broadband",
+        "5g"
+      ],
+      "facts": {
+        "revenue": 39173,
+        "ebitda": 20865,
+        "marginPct": 53.3,
+        "ebitdaGrowthPct": 15.1,
+        "subscribersMillion": 533.3,
+        "arpu": 215.6
+      },
+      "basis": "Jio Platforms and connectivity operational measures; Q1 FY2027"
+    },
+    {
+      "id": "e-retail",
+      "documentId": "ar26-retail",
+      "section": "Retail · Outlook and RCPL performance",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/ar2025-26/retail.html",
+      "kind": "paraphrase",
+      "text": "Retail combines stores, digital commerce and distribution. The annual report highlights expansion, operating efficiency and customer experience; it also notes discretionary-demand and supply-chain risk. RCPL gross revenue reached ₹22,000 crore in FY2026, with distribution to over 3 million outlets through over 5,000 distributors.",
+      "keywords": [
+        "retail",
+        "consumer",
+        "rcpl",
+        "fmcg",
+        "stores",
+        "competition",
+        "outlook",
+        "business"
+      ],
+      "facts": {
+        "rcplRevenueFY2026": 22000,
+        "rcplOutletsMillion": 3,
+        "rcplDistributors": 5000
+      },
+      "basis": "Annual-report Retail section; RCPL separate from RRVL after demerger"
+    },
+    {
+      "id": "e-guidance",
+      "documentId": "call-q1fy27",
+      "section": "Karan Suri · New energy · 01:12:26–01:19:45",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/investors/events-presentations#webcast-sec",
+      "kind": "paraphrase",
+      "text": "Management said the roughly 40 GWh battery-cell factory would be commissioned during the year. It described a shift toward execution and integration at scale. The statement is a forward commitment; this corpus does not verify completed commissioning. A construction photograph or an annual target alone does not establish delivery.",
+      "keywords": [
+        "guidance",
+        "promise",
+        "promised",
+        "commitment",
+        "battery",
+        "new energy",
+        "commission",
+        "target",
+        "capex",
+        "delivery"
+      ],
+      "facts": {
+        "batteryGwh": 40
+      },
+      "basis": "Forward statement made July 2026; exact calendar/fiscal interpretation should be retained as disclosed"
+    },
+    {
+      "id": "e-q4-leverage",
+      "documentId": "call-q4fy26",
+      "section": "V Srikanth · Group performance · 00:00:01–00:06:32",
+      "page": "3",
+      "pdfPage": 3,
+      "url": "https://www.ril.com/sites/default/files/2026-04/24042026_RIL_Media_Analyst_Call_Transcript_Q4_FY2026.pdf#page=3",
+      "kind": "paraphrase",
+      "text": "The Q4 FY2026 call discussed net-debt-to-EBITDA around 0.64 and referred to keeping it below one. This is leverage commentary, not a promise of next-quarter profit or a full-year capex ceiling. Q1 FY2027’s issuer results later report 0.57 using annualised quarterly EBITDA.",
+      "keywords": [
+        "guidance",
+        "leverage",
+        "debt",
+        "promise",
+        "net debt",
+        "ebitda",
+        "below one"
+      ],
+      "facts": {
+        "netDebtToEbitdaDiscussed": 0.64,
+        "threshold": 1
+      },
+      "basis": "Management commentary, Q4 FY2026"
+    },
+    {
+      "id": "e-q3-business",
+      "documentId": "call-q3fy26",
+      "section": "V Srikanth · Group performance · 00:00:03–00:06:06",
+      "page": "2",
+      "pdfPage": 2,
+      "url": "https://www.ril.com/sites/default/files/2026-01/RIL_Media_Analyst_Call_Transcript_Q3_FY2026.pdf#page=2",
+      "kind": "fact_extract",
+      "text": "At Q3 FY2026 the call described about 515 million Jio customers, retail revenue growth near 8%, retail EBITDA growth 1.3%, and quick-commerce run-rate around 1.6 million daily orders. Those operating counts and legal-entity measures are not consolidated quarterly revenue.",
+      "keywords": [
+        "q3",
+        "quarter",
+        "trajectory",
+        "jio",
+        "retail",
+        "quick commerce",
+        "growth"
+      ],
+      "facts": {
+        "jioSubscribersMillion": 515,
+        "retailEbitdaGrowthPct": 1.3,
+        "quickCommerceOrdersMillion": 1.6
+      },
+      "basis": "Management commentary on Q3 FY2026"
+    },
+    {
+      "id": "e-results-q1",
+      "documentId": "results-q1fy27",
+      "section": "Consolidated financial highlights",
+      "page": "1",
+      "pdfPage": 1,
+      "url": "https://rilstaticasset.akamaized.net/sites/default/files/2026-07/Media_Release_RIL_Q1_FY2026-27_Financial_and_Operational_Performance.pdf#page=1",
+      "kind": "fact_extract",
+      "text": "Quarter ended June 2026: gross revenue ₹340,257 crore; EBITDA ₹54,067 crore; PBT ₹30,630 crore; profit including associates/JVs ₹23,196 crore. Recurring EBITDA comparison excludes ₹8,924 crore listed-investment gain in Q1 FY2026. Reported EBITDA YoY −6.8%; recurring +10.1%. Reported profit YoY −24.6%; recurring +6.1%.",
+      "keywords": [
+        "results",
+        "q1",
+        "current",
+        "quarter",
+        "revenue",
+        "ebitda",
+        "pbt",
+        "pat",
+        "reported",
+        "recurring",
+        "yoy"
+      ],
+      "facts": {
+        "grossRevenue": 340257,
+        "ebitda": 54067,
+        "pbt": 30630,
+        "pat": 23196,
+        "priorInvestmentGain": 8924,
+        "reportedEbitdaYoyPct": -6.8,
+        "recurringEbitdaYoyPct": 10.1,
+        "reportedPatYoyPct": -24.6,
+        "recurringPatYoyPct": 6.1
+      },
+      "basis": "Push-only results filing; Q1 FY2027"
+    },
+    {
+      "id": "e-retail-metrics",
+      "documentId": "ar26-retail",
+      "section": "Business performance · Financial performance",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/ar2025-26/retail.html",
+      "kind": "fact_extract",
+      "text": "FY2026 / FY2025 Retail segment, ₹ crore: gross revenue 371,085 / 330,943; net revenue 328,202 / 291,043; EBITDA 27,034 / 25,094. EBITDA margin on net revenue 8.2% / 8.6%. Gross sales growth 12.1%, EBITDA growth 7.7%, margin down 40 basis points.",
+      "keywords": [
+        "retail",
+        "segment",
+        "margin",
+        "revenue",
+        "ebitda",
+        "growth",
+        "financial"
+      ],
+      "facts": {
+        "FY2026": {
+          "grossRevenue": 371085,
+          "netRevenue": 328202,
+          "ebitda": 27034,
+          "marginPct": 8.2
+        },
+        "FY2025": {
+          "grossRevenue": 330943,
+          "netRevenue": 291043,
+          "ebitda": 25094,
+          "marginPct": 8.6
+        }
+      },
+      "basis": "Retail segment annual; ₹ crore; net-revenue margin denominator"
+    },
+    {
+      "id": "e-digital-metrics",
+      "documentId": "ar26-digital",
+      "section": "Business performance · Financial performance",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/ar2025-26/digital-services.html",
+      "kind": "fact_extract",
+      "text": "FY2026 / FY2025 Digital Services segment, ₹ crore: gross revenue 176,164 / 154,119; net revenue 149,965 / 131,336; EBITDA 76,560 / 65,001. EBITDA margin on net revenue 51.1% / 49.5%. EBITDA growth 17.8%. These are segment values, distinct from Jio Platforms legal-entity results.",
+      "keywords": [
+        "digital",
+        "jio",
+        "segment",
+        "margin",
+        "revenue",
+        "ebitda",
+        "growth",
+        "financial"
+      ],
+      "facts": {
+        "FY2026": {
+          "grossRevenue": 176164,
+          "netRevenue": 149965,
+          "ebitda": 76560,
+          "marginPct": 51.1
+        },
+        "FY2025": {
+          "grossRevenue": 154119,
+          "netRevenue": 131336,
+          "ebitda": 65001,
+          "marginPct": 49.5
+        }
+      },
+      "basis": "Digital Services segment annual; ₹ crore; net-revenue margin denominator"
+    },
+    {
+      "id": "e-o2c",
+      "documentId": "ar26-o2c",
+      "section": "Business performance · Financial performance",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/ar2025-26/oil-to-chemicals.html",
+      "kind": "fact_extract",
+      "text": "FY2026 / FY2025 O2C, ₹ crore: revenue 662,401 / 626,921; EBITDA 60,546 / 54,988; margin 9.1% / 8.8%. Revenue rose 5.7%, EBITDA 10.1%. Refining fuel spreads and sourcing supported profit; petrochemical overcapacity and supply disruption remain risks.",
+      "keywords": [
+        "o2c",
+        "energy",
+        "refining",
+        "chemical",
+        "petrochemical",
+        "segment",
+        "margin",
+        "revenue",
+        "ebitda"
+      ],
+      "facts": {
+        "FY2026": {
+          "revenue": 662401,
+          "ebitda": 60546,
+          "marginPct": 9.1
+        },
+        "FY2025": {
+          "revenue": 626921,
+          "ebitda": 54988,
+          "marginPct": 8.8
+        }
+      },
+      "basis": "O2C segment annual; ₹ crore"
+    },
+    {
+      "id": "e-new-energy",
+      "documentId": "ar26-oilgas",
+      "section": "New Energy · Energy storage and green fuels",
+      "page": null,
+      "pdfPage": null,
+      "url": "https://www.ril.com/ar2025-26/oil-and-gas.html",
+      "kind": "paraphrase",
+      "text": "The annual report identifies 40 GWh of planned battery capacity with a roadmap to 100 GWh, and production ramp during the second half of 2026. Solar manufacturing ramps toward 10 GWp with 20 GWp expansion planned. Green-ammonia offtake with Samsung C&T spans 15 years with supply from the second half of FY2029. Net Carbon Zero is a 2035 goal.",
+      "keywords": [
+        "new energy",
+        "battery",
+        "solar",
+        "green",
+        "hydrogen",
+        "ammonia",
+        "guidance",
+        "capacity",
+        "capex",
+        "target",
+        "2035",
+        "commission"
+      ],
+      "facts": {
+        "batteryInitialGwh": 40,
+        "batteryRoadmapGwh": 100,
+        "solarFirstTargetGwp": 10,
+        "solarExpansionGwp": 20,
+        "netCarbonZeroYear": 2035,
+        "ammoniaSupplyStart": "H2 FY2029",
+        "ammoniaContractYears": 15
+      },
+      "basis": "Forward-looking annual-report commitments; not verified delivery"
+    }
+  ],
+  "annual": [
+    {
+      "period": "FY2024",
+      "periodEnd": "2024-03-31",
+      "grossRevenue": 1000122,
+      "ebitda": 178290,
+      "pat": 79020,
+      "evidenceIds": [
+        "e-annual"
+      ]
+    },
+    {
+      "period": "FY2025",
+      "periodEnd": "2025-03-31",
+      "grossRevenue": 1071174,
+      "netRevenue": 980136,
+      "ebitda": 183422,
+      "pbt": 106017,
+      "pat": 81309,
+      "patOwners": 69648,
+      "cfo": 178703,
+      "capex": 131107,
+      "cashCapex": 139967,
+      "grossDebt": 347530,
+      "cashAndMarketableSecurities": 230447,
+      "netDebt": 117083,
+      "evidenceIds": [
+        "e-annual",
+        "e-income",
+        "e-cashflow",
+        "e-debt",
+        "e-segments"
+      ]
+    },
+    {
+      "period": "FY2026",
+      "periodEnd": "2026-03-31",
+      "grossRevenue": 1175919,
+      "netRevenue": 1075675,
+      "ebitda": 207911,
+      "pbt": 123162,
+      "pat": 95754,
+      "patOwners": 80775,
+      "cfo": 192113,
+      "capex": 144271,
+      "cashCapex": 122916,
+      "grossDebt": 374421,
+      "cashAndMarketableSecurities": 249704,
+      "netDebt": 124717,
+      "evidenceIds": [
+        "e-annual",
+        "e-income",
+        "e-cashflow",
+        "e-debt",
+        "e-segments"
+      ]
+    }
+  ],
+  "quarterly": [
+    {
+      "period": "Q1 FY2026",
+      "periodEnd": "2025-06-30",
+      "publishedAt": "2025-07-18",
+      "grossRevenue": 273252,
+      "ebitda": 58024,
+      "recurringEbitda": 49100,
+      "pbt": 37146,
+      "pat": 30783,
+      "recurringPat": 21859,
+      "netDebt": 117581,
+      "capex": 29875,
+      "evidenceIds": [
+        "e-results-q1"
+      ],
+      "note": "Reported EBITDA 58,024, PBT 37,146 and PAT including associates/JVs 30,783 are reconstructed by adding the disclosed 8,924 listed-investment gain to the recurring comparative table (49,100 / 28,222 / 21,859). Use recurring columns for recurring YoY comparisons; default columns are reported.",
+      "recurringPbt": 28222
+    },
+    {
+      "period": "Q4 FY2026",
+      "periodEnd": "2026-03-31",
+      "publishedAt": "2026-04-24",
+      "grossRevenue": 325290,
+      "ebitda": 48588,
+      "pbt": 27195,
+      "pat": 20589,
+      "netDebt": 124717,
+      "capex": 40560,
+      "evidenceIds": [
+        "e-results-q1"
+      ]
+    },
+    {
+      "period": "Q1 FY2027",
+      "periodEnd": "2026-06-30",
+      "publishedAt": "2026-07-17",
+      "grossRevenue": 340257,
+      "ebitda": 54067,
+      "pbt": 30630,
+      "pat": 23196,
+      "netDebt": 122914,
+      "capex": 38682,
+      "evidenceIds": [
+        "e-results-q1",
+        "e-call-q1"
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "id": "o2c",
+      "name": "Oil to Chemicals",
+      "revenue": 662401,
+      "ebitda": 60546,
+      "revenueGrowthPct": 5.7,
+      "ebitdaGrowthPct": 10.1,
+      "evidenceId": "e-o2c",
+      "url": "https://www.ril.com/ar2025-26/oil-to-chemicals.html"
+    },
+    {
+      "id": "digital",
+      "name": "Digital Services",
+      "revenue": 176164,
+      "ebitda": 76560,
+      "revenueGrowthPct": 14.3,
+      "ebitdaGrowthPct": 17.8,
+      "evidenceId": "e-digital-metrics",
+      "url": "https://www.ril.com/ar2025-26/digital-services.html",
+      "netRevenue": 149965
+    },
+    {
+      "id": "retail",
+      "name": "Retail",
+      "revenue": 371085,
+      "ebitda": 27034,
+      "revenueGrowthPct": 12.1,
+      "ebitdaGrowthPct": 7.7,
+      "evidenceId": "e-retail-metrics",
+      "url": "https://www.ril.com/ar2025-26/retail.html",
+      "netRevenue": 328202
+    },
+    {
+      "id": "oilgas",
+      "name": "Oil & Gas",
+      "revenue": 23861,
+      "ebitda": 19050,
+      "revenueGrowthPct": -5.4,
+      "ebitdaGrowthPct": -10.1,
+      "evidenceId": "e-segments",
+      "url": "https://www.ril.com/ar2025-26/oil-and-gas.html"
+    },
+    {
+      "id": "media",
+      "name": "Media & Entertainment",
+      "revenue": 40682,
+      "ebitda": 5842,
+      "revenueGrowthPct": 96.6,
+      "ebitdaGrowthPct": 218.7,
+      "evidenceId": "e-segments",
+      "url": "https://www.ril.com/ar2025-26/index.html"
+    }
+  ],
+  "guidance": [
+    {
+      "id": "battery-commissioning",
+      "title": "Commission battery-cell manufacturing",
+      "statedAt": "2026-07-17",
+      "scope": "New Energy",
+      "target": "Approximately 40 GWh battery-cell factory; commission during the year",
+      "status": "pending",
+      "reason": "Forward statement verified; completed commissioning not verified in indexed sources.",
+      "guidanceEvidenceId": "e-guidance",
+      "actualEvidenceId": null
+    },
+    {
+      "id": "leverage-discipline",
+      "title": "Keep leverage below one",
+      "statedAt": "2026-04-24",
+      "scope": "Group net debt / EBITDA",
+      "target": "Below 1× as discussed on the Q4 call",
+      "status": "not_comparable",
+      "reason": "Q4 discussion references ~0.64; subsequent quarterly presentation uses annualised quarterly EBITDA. This is a monitoring policy with a basis caveat, not a quarterly earnings commitment.",
+      "guidanceEvidenceId": "e-q4-leverage",
+      "actualEvidenceId": "e-results-q1"
+    },
+    {
+      "id": "four-quarter-coverage",
+      "title": "Four-quarter promise scorecard",
+      "status": "missing_evidence",
+      "reason": "No complete four-quarter set of explicit earlier commitments and comparable later outcomes has been verified. Comparable earlier guidance and subsequent actuals are needed for a verdict.",
+      "guidanceEvidenceId": null,
+      "actualEvidenceId": null
+    },
+    {
+      "id": "net-carbon-zero",
+      "title": "Reach Net Carbon Zero",
+      "statedAt": null,
+      "scope": "Group energy transition",
+      "target": "2035",
+      "status": "pending",
+      "reason": "Long-term ambition, not a commitment due in the latest quarter.",
+      "guidanceEvidenceId": "e-new-energy",
+      "actualEvidenceId": null
+    }
+  ],
+  "glossary": [
+    {
+      "term": "Revenue",
+      "definition": "Sales generated during a period. Distinguish gross sales including GST from revenue from operations net of GST."
+    },
+    {
+      "term": "EBITDA",
+      "definition": "Earnings before interest, tax, depreciation and amortisation. A profitability measure; it is not operating cash flow."
+    },
+    {
+      "term": "PBT",
+      "definition": "Profit before tax. Keep the treatment of associates and joint ventures consistent across comparisons."
+    },
+    {
+      "term": "PAT",
+      "definition": "Profit after tax. FINN labels whether it includes associates/JVs and non-controlling interests or is attributable to owners."
+    },
+    {
+      "term": "Margin",
+      "definition": "Profit divided by revenue, expressed as a percentage. Always use a consistent revenue definition."
+    },
+    {
+      "term": "QoQ",
+      "definition": "Comparison against the immediately preceding quarter."
+    },
+    {
+      "term": "YoY",
+      "definition": "Comparison against the same quarter a year ago, or the preceding full financial year for annual figures."
+    },
+    {
+      "term": "Cash conversion",
+      "definition": "How reported profit translates into operating cash. FINN’s CFO/PAT ratio is a derived comparison, not an audit conclusion."
+    },
+    {
+      "term": "Free cash flow",
+      "definition": "Operating cash flow less a stated capital-spending measure. FINN uses cash expenditure on PPE, spectrum and intangibles and labels the scope."
+    },
+    {
+      "term": "Net debt",
+      "definition": "Borrowings less a specified liquidity basket. For RIL this basket includes cash and marketable securities."
+    },
+    {
+      "term": "Working capital",
+      "definition": "Resources tied up in operations, including inventory and receivables less operating payables."
+    },
+    {
+      "term": "Contingent liabilities",
+      "definition": "Possible obligations whose timing or outcome depends on future events; not automatically recognised debt."
+    },
+    {
+      "term": "Related-party transactions",
+      "definition": "Dealings with entities or people related to the group. Disclosure alone establishes neither impropriety nor absence of risk."
+    },
+    {
+      "term": "Guidance",
+      "definition": "Management’s forward expectations. An ambition without a numerical target and matching horizon cannot be scored as a quarterly promise."
+    },
+    {
+      "term": "ROCE / ROE",
+      "definition": "Returns on capital employed or equity. Scope and denominator matter; no consolidated value is supplied when only a standalone ratio was verified."
+    }
+  ],
+  "limitations": [
+    "This is a hand-verified source snapshot, not a live exchange feed.",
+    "Annual-report publication date was not independently verified; approval date is kept separately.",
+    "The annual gross-revenue series includes GST; net revenue is stored separately.",
+    "Segment revenues include inter-segment activity and do not form a valid pie of consolidated revenue.",
+    "Jio Platforms legal-entity figures differ from the broader Digital Services segment.",
+    "Company-reported capex differs from cash capital spending in the cash-flow statement.",
+    "Price, P/E, current market cap and volume require a separately timestamped market-data adapter.",
+    "Four-quarter promise verdicts require additional explicit earlier guidance and matching outcome evidence."
+  ]
+}
