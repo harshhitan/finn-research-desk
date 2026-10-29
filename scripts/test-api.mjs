@@ -21,8 +21,13 @@ assert.equal((await request("briefing?from=2026-12-01&to=2026-12-02")).data.item
 assert.equal((await request("briefing?from=no-date")).status,400);
 assert.equal((await request("evidence/e-cashflow")).data.document.id,"ar26");
 assert.equal((await request("evidence/missing")).status,404);
+const issuerFiling=(await request("bootstrap")).data.corpus.documents.find(d=>d.type==="issuer_announcement"&&d.title.includes("CITIC CLSA"));
+assert.ok(issuerFiling,"The reported investor-meeting filing must be present for this regression check");
+const filingContent=await request(`documents/${issuerFiling.id}/content`);assert.equal(filingContent.status,200);assert.equal(filingContent.data.status,"ready");assert.equal(filingContent.data.pageCount,1);assert.match(filingContent.data.pages[0].text,/CITIC CLSA/);assert.match(filingContent.data.pages[0].text,/Hong Kong/);
+const repeatedContent=await request(`documents/${issuerFiling.id}/content`);assert.equal(repeatedContent.data.contentHash,filingContent.data.contentHash);assert.equal(repeatedContent.data.extractedAt,filingContent.data.extractedAt);
+assert.equal((await request("documents/issuer-00000000000000000000/content")).status,404);
 assert.ok((await request("research/history")).data.some(r=>r.id===answer.data.id));
 const firstCookie=cookie;cookie="";assert.equal((await request("bootstrap")).data.saved.length,0);cookie=firstCookie;
 const cross=await fetch(`${base}/api/saved`,{method:"POST",headers:{Origin:"https://other.invalid","Content-Type":"application/json",Cookie:cookie},body:JSON.stringify({id:"ar26",saved:true})});assert.equal(cross.status,403);
 await request("saved","POST",{id:"e-cashflow",saved:false});await request("alert-rules","PUT",original);
-console.log("PASS: API health, persisted rules, idempotent saves, session isolation, cited research/history, input validation, exact filing windows, evidence lookups and cross-origin write protection.");
+console.log("PASS: API health, persisted rules/saves, session isolation, research/history, input validation, filing text/cache regression, exact windows, evidence lookups and cross-origin write protection.");

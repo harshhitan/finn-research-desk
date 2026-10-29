@@ -21,3 +21,7 @@ Verified in the in-app browser at default desktop width and 390/360-pixel viewpo
 - Source library contains 12 research-source entries plus separately fetched issuer records. New issuer attachments remain excluded from the research corpus.
 
 The deployable product is scoped to Reliance. These checks do not assert multi-company generalisation or complete four-quarter promise outcomes.
+
+## Filing drawer regression — 29 October
+
+The CITIC CLSA investor-meeting filing originally displayed metadata only. The corrected flow downloads and extracts that actual one-page PDF, caches it, and displays its main passage plus expandable page text. Verified through the API and the browser drawer. Regression checks confirm the event, location and dates survive extraction, repeated reads use the cached hash/timestamp, unknown filing IDs return 404, and invalid/oversized/redirected sources produce clear failures.

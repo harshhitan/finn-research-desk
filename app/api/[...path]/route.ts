@@ -3,6 +3,7 @@ import { answerQuestion, buildFeed } from "../../../lib/finance";
 import { database, getRules, saved, session } from "../../../lib/repository";
 import { getMarket } from "../../../lib/market";
 import { getAnnouncements, issuerDocuments, issuerFeed } from "../../../lib/announcements";
+import { readFiling, type FilingContent } from "../../../lib/filing-content";
 import type { Corpus, Rules } from "../../../lib/types";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,23 @@ async function handle(request:Request) {
   if(request.method!=="GET") {const origin=request.headers.get("origin");if(origin && origin!==url.origin)return json({error:"Cross-origin write rejected"},403);}
   try{
     if(path==="health")return json({status:"ok",company:"RELIANCE",database:(await database().prepare("SELECT 1 AS ok").first())?"ready":"unavailable",researchMode:"extractive",corpusVersion:rawCorpus.researchedAt});
+    const contentRoute=path.match(/^documents\/(issuer-[a-f0-9]{20})\/content$/);
+    if(contentRoute&&request.method==="GET"){
+      const id=contentRoute[1];
+      const filingsCache=await database().prepare("SELECT data FROM provider_cache WHERE key='issuer-announcements'").first<{data:string}>();
+      const filing=filingsCache?JSON.parse(filingsCache.data).records.find((r:any)=>r.id===id):null;
+      if(!filing)return json({error:"This filing is no longer available in the issuer index. Refresh sources and try again."},404);
+      const key=`filing-content-v1:${id}`;
+      const cached=await database().prepare("SELECT data,fetched_at FROM provider_cache WHERE key=?").bind(key).first<{data:string;fetched_at:string}>();
+      if(cached){
+        const content=JSON.parse(cached.data) as FilingContent;
+        const ttl=content.status==="ready"?86400000:url.searchParams.get("retry")==="1"?5000:60000;
+        if(Date.now()-Date.parse(cached.fetched_at)<ttl)return json(content);
+      }
+      const content=await readFiling(id,filing.url);
+      await database().prepare("INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at").bind(key,JSON.stringify(content),content.extractedAt).run();
+      return json(content);
+    }
     if(path==="bootstrap"){
       const [rules,items,cache,alerts]=await Promise.all([getRules(who.owner),saved(who.owner),database().prepare("SELECT data,fetched_at FROM provider_cache WHERE key='source-check'").first<{data:string;fetched_at:string}>(),database().prepare("SELECT data,created_at,trigger_key FROM alerts WHERE owner=? ORDER BY created_at DESC LIMIT 50").bind(who.owner).all<{data:string;created_at:string;trigger_key:string}>()]);
       const filingsCache=await database().prepare("SELECT data,fetched_at FROM provider_cache WHERE key='issuer-announcements'").first<{data:string;fetched_at:string}>();

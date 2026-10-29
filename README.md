@@ -11,6 +11,7 @@ A responsive, installable web application for understanding Reliance Industries.
 - Eight research pathways based on the assignment reference: business, financials, cash quality, balance sheet, management guidance, risks/governance, trajectory and bull/bear interpretations.
 - Server-side passage retrieval over a verified Reliance annual-report/transcript corpus. Research returns up to three sourced observations, numerical calculations where supported, and explicit evidence gaps.
 - Source drawer with printed/PDF page distinctions, original URLs and company-report definitions; glossary, saved source passages/documents and persisted research history.
+- Issuer-filing drawers fetch the original PDF on demand, extract and cache page text, show a key passage where a subject is identifiable, and link to the exact PDF page. Scanned, blocked or oversized documents show an explicit reason and a retry/original action.
 - In-app alert preferences and durable, deduplicated alert triggers. Observation polling runs while the app is open.
 - Responsive desktop and phone layouts, bottom navigation, accessible dialog dismissal/focus containment and a web-app manifest.
 
@@ -40,6 +41,7 @@ No model API key is required. Optional `FINN_TEST_URL` changes the API test orig
 ```powershell
 node node_modules/typescript/bin/tsc --noEmit
 node scripts/test-finance.mjs
+node scripts/test-filings.mjs
 node scripts/test-api.mjs
 ```
 
@@ -56,6 +58,7 @@ The API test needs a running, migrated preview. It uses its own temporary sessio
 | `POST /api/research` | `{question, ticker:"RELIANCE", topic?}` sourced research |
 | `GET /api/research/history` | Visitor's last 20 research runs |
 | `GET /api/evidence/{id}` | Source passage and parent document |
+| `GET /api/documents/{issuer-id}/content` | Extracted original filing text, page references and extraction status |
 | `GET/POST /api/saved` | Read/toggle source or filing saves |
 | `GET/PUT /api/alert-rules` | Read/validate/persist preferences |
 | `POST /api/refresh` | Bounded manual refresh, one-minute cooldown |
@@ -67,6 +70,8 @@ Writes reject mismatched Origin headers. SQL values use bound parameters, record
 UI polling: 60 seconds while open. Server-side public-price cache: one hour. Issuer-announcement cache: ten minutes. These are best-effort checks, not exchange streaming or background device notifications. A manual source check bypasses normal provider cache age, subject to cooldown. Price-rule changes apply only to observations fetched after the change. Announcement rules apply to newly observed material records within the last day; issuer dates have day precision.
 
 Announcement retrieval covers the latest issuer page, retaining previously observed records (up to 100). It does not claim exhaustive NSE/BSE coverage. New attachments are linked and classified by title, not silently treated as indexed research evidence. Research remains restricted to allowed annual reports and transcripts.
+
+Opening an issuer filing now loads its PDF text into the drawer. Successful extraction is cached for 24 hours with a SHA-256 content hash; source errors are briefly cached and may be retried. Extraction accepts only known indexed Reliance filing IDs and allowlisted source hosts, with bounded bytes/pages/text and no document-script execution. It does not add issuer filings to the pull-research corpus.
 
 ## Scope and limitations
 
