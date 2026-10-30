@@ -1,6 +1,19 @@
-# FINN — Reliance research desk
+# FINN — Indian portfolio monitoring and research
 
-A responsive, installable web application for understanding Reliance Industries. The product uses a restrained financial-desk interface: comparative tables, clearly stated accounting bases, concise research and inspectable evidence.
+A responsive, installable web application monitoring 20 Indian NSE companies through exchange filings and completed-session market data. The existing Reliance research desk remains at `/research`. The product uses comparative tables, clearly stated accounting bases and inspectable evidence.
+
+The portfolio pipeline now includes durable D1 jobs, source watermarks, retries,
+deduplication, user-specific rules and alerts, PDF text/cache, and an independent
+ChatGPT subscription adapter. **Hosted subscription inference remains inactive:
+FINN has no approved hosted client registration yet.** Protocol tests use mocks;
+they do not prove a live subscription connection. See
+[portfolio architecture and activation](docs/PORTFOLIO_PIPELINE.md).
+
+Portfolio checks: `npm run test:portfolio`; with a running, populated preview,
+`npm run test:portfolio-api`. The main portfolio is `/`; the endpoints are
+`/api/portfolio`, `/rules`, `/refresh`, `/jobs/tick`, protected `/jobs/run` and
+`/jobs/status`, `/filings/{id}/content`, `/filings/{id}/analyse`, and
+`/chatgpt/{status,start,callback,disconnect}` under `/api/portfolio`.
 
 ## Implemented
 

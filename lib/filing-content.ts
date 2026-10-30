@@ -15,23 +15,23 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_PAGES = 40;
 const SOURCE_HOSTS = new Set(["www.ril.com", "ril.com", "rilstaticasset.akamaized.net"]);
 
-export function validateFilingUrl(value: string) {
+export function validateFilingUrl(value: string, sourceHosts = SOURCE_HOSTS) {
   const url = new URL(value);
-  if (url.protocol !== "https:" || !SOURCE_HOSTS.has(url.hostname) || url.username || url.password || url.port) {
+  if (url.protocol !== "https:" || !sourceHosts.has(url.hostname) || url.username || url.password || url.port) {
     throw new Error("Only the original Reliance document host is allowed.");
   }
   return url;
 }
 
-export async function downloadFiling(url: string, fetcher: typeof fetch = fetch) {
-  let current = validateFilingUrl(url);
+export async function downloadFiling(url: string, fetcher: typeof fetch = fetch, sourceHosts = SOURCE_HOSTS) {
+  let current = validateFilingUrl(url, sourceHosts);
   for (let redirects = 0; redirects <= 3; redirects++) {
     const response = await fetcher(current.href, { redirect: "manual", signal: AbortSignal.timeout(12000) });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get("location");
       await response.body?.cancel();
       if (!location || redirects === 3) throw new Error("The original document redirect could not be followed.");
-      current = validateFilingUrl(new URL(location, current).href);
+      current = validateFilingUrl(new URL(location, current).href, sourceHosts);
       continue;
     }
     if (!response.ok) { await response.body?.cancel(); throw new Error("The issuer could not provide the original PDF. Please try again."); }

@@ -1,1 +1,2 @@
-import ResearchDesk from "./research-desk"; export default function Home() { return <ResearchDesk />; }
+import PortfolioDesk from "./portfolio-desk";
+export default function Home(){return <PortfolioDesk/>;}

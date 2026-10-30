@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./portfolio.css";
 
 export const metadata: Metadata = {
-  title: "FINN | Reliance research desk",
-  description: "Company intelligence, grounded in the source. Explore Reliance's financials, filings, cash quality and management commentary.",
+  title: "FINN | Indian portfolio monitoring",
+  description: "Monitor 20 Indian companies through primary exchange filings, completed-session market data and inspectable evidence.",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "FINN", statusBarStyle: "default" },
   icons: {

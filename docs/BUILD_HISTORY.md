@@ -15,3 +15,21 @@ The original assignment and reference were read completely from their shared Dri
 - Source evidence: a bounded research subagent verified the primary documents and produced the factual corpus; the main agent integrated and checked those references and financial invariants.
 
 No credentials are embedded in authored source or this history. Hosting repository credentials are passed to the Sites helper through hidden stdin.
+# Portfolio monitoring expansion — 30 October 2026
+
+- Expanded from a single-company landing view to a 20-company NSE monitoring
+  workspace; retained the original source-grounded desk at `/research`.
+- Verified ticker/ISIN identity using NSE's live equity directory and exercised
+  NSE historical announcements, exchange RSS and public Yahoo EOD providers.
+- Added durable collection state, leases/retries, filing and alert idempotency,
+  source coverage, digest windows, preferences and a protected unattended writer.
+- Built FINN's own ChatGPT authorization/inference adapter without Hermes.
+  Hosted model activation remains blocked by missing approved registration,
+  confirmed by the owner. No existing personal Codex credentials were accessed.
+- Local acceptance: 20 EOD series, 168 persisted filings, real NSE PDF text/hash
+  and cache, exact time windows and preference persistence. Protocol tests cover
+  callback replay, wrong-user callbacks, PKCE, JWT signature/claims, token refresh,
+  encryption, disconnect, unsupported claims and model-stream completion.
+- Mobile verification at 390 px: 20 company cards and no document-wide horizontal
+  overflow. Published and scheduled-run verification is recorded separately.
+

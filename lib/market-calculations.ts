@@ -6,6 +6,7 @@ export function completedSessionStats(bars:TradingBar[],splitDates:string[],now=
   const last=history.at(-1);if(!last)return null;const previous=history.at(-2);const baseline=history.slice(-21,-1);
   const split=splitDates.some(d=>d>=(history.at(-21)?.date||last.date)&&d<=last.date);
   const mean=baseline.length===20?baseline.reduce((s,p)=>s+p.volume,0)/20:null;
-  const comparable=last.comparableClose??last.close;const previousComparable=previous?.comparableClose??previous?.close;
+  const useAdjusted=Number.isFinite(last.comparableClose)&&Number.isFinite(previous?.comparableClose);
+  const comparable=useAdjusted?last.comparableClose!:last.close;const previousComparable=useAdjusted?previous?.comparableClose:previous?.close;
   return {history,last,baseline,split,movePct:previousComparable&&previousComparable>0&&!split?100*(comparable/previousComparable-1):null,volumeMultiple:mean&&mean>0&&!split?last.volume/mean:null};
 }
