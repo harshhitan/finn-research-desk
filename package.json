@@ -14,7 +14,9 @@
     "db:generate": "drizzle-kit generate",
     "test": "node scripts/test-finance.mjs",
     "test:portfolio": "node scripts/test-portfolio.mjs",
-    "test:portfolio-api": "node scripts/test-portfolio-api.mjs"
+    "test:portfolio-api": "node scripts/test-portfolio-api.mjs",
+    "test:results": "node scripts/test-results.mjs",
+    "test:results-view": "node scripts/test-results-view.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

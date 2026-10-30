@@ -82,6 +82,14 @@ An enabled hourly Site schedule is linked as `FINN portfolio monitoring`
 service rejected a 30-minute interval because it allows at most one run per hour.
 Schedule creation proves configuration, not a completed cloud execution.
 
+The first scheduled cloud execution was subsequently verified in task run
+`01a18cb2-f2f1-766c-bf68-4dd7c65bb0d1`: it retrieved this source revision's
+instructions and Site service access, completed authenticated collector calls,
+and read back HTTP 200 at 17:37:51 IST on 30 October 2026 with 20 quote series,
+168 filings, zero source errors and 31 completed jobs. A transient initial
+authorization attempt failed; the run recovered and completed the verified path.
+This verifies a fresh scheduled executor, not just a saved schedule.
+
 `POST /api/portfolio/jobs/run` requires `X-Finn-Job-Token` plus the Site's supported
 service-access boundary. The configured job secret matches the Site's service
 access credential, which a fresh scheduled task obtains through `get_site`.
@@ -101,3 +109,27 @@ watched material filings; collection works while the model connection is pending
 Mocked auth/model tests prove protocol logic only. A real approved hosted client,
 user consent, successful model turn, refresh, disconnect and an unattended cloud
 run are required before claiming full subscription integration is complete.
+
+## Results comparisons
+
+Analysis schema version 2 records a separately cited primary reporting period and
+period/duration/scope/definition context for each reported metric. A missing
+current quarter never causes substitution of an older comparative quarter.
+`GET /api/portfolio/filings/{id}/results` reads only the visitor's analyses and
+withholds comparisons whose cached PDF content hash has changed.
+
+QoQ uses the exact three-month prior quarter-end; YoY uses the same quarter-end
+month a year earlier. Only explicitly reported three-month figures qualify.
+Annual and YTD values are not divided or subtracted to manufacture a quarter.
+Company, consolidated/standalone scope, accounting basis and metric definitions
+must match. Current-filing comparative figures take precedence over older filings;
+conflicting comparable figures are withheld. Exact INR unit conversions are
+recorded, and zero/negative comparison denominators do not produce growth rates.
+Each result exposes both source quotes/pages, document hashes, original values,
+normalized inputs and its formula. The published UI shows missing-evidence states
+until approved inference produces real source-checked analyses; no test figures
+are seeded into production.
+
+Comparison reads are bounded to the selected filing and 50 available analyses,
+with truncation disclosed in the response and UI. The database returns only the
+cached PDF's hash for invalidation, not its full text on every comparison read.

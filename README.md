@@ -10,9 +10,14 @@ they do not prove a live subscription connection. See
 [portfolio architecture and activation](docs/PORTFOLIO_PIPELINE.md).
 
 Portfolio checks: `npm run test:portfolio`; with a running, populated preview,
-`npm run test:portfolio-api`. The main portfolio is `/`; the endpoints are
+`npm run test:portfolio-api`. Comparison checks: `npm run test:results` and
+`npm run test:results-view`. Results drawers provide source-checked Revenue,
+EBITDA, PBT and PAT comparisons when explicit period/entity evidence is available;
+they otherwise show missing evidence, not estimated values.
+The main portfolio is `/`; the endpoints are
 `/api/portfolio`, `/rules`, `/refresh`, `/jobs/tick`, protected `/jobs/run` and
-`/jobs/status`, `/filings/{id}/content`, `/filings/{id}/analyse`, and
+`/jobs/status`, `/filings/{id}/content`, `/filings/{id}/analyse`,
+`/filings/{id}/results`, and
 `/chatgpt/{status,start,callback,disconnect}` under `/api/portfolio`.
 
 ## Implemented

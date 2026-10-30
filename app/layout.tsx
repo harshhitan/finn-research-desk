@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./portfolio.css";
+import "./results-card.css";
 
 export const metadata: Metadata = {
   title: "FINN | Indian portfolio monitoring",

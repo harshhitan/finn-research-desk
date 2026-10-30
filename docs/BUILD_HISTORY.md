@@ -15,6 +15,22 @@ The original assignment and reference were read completely from their shared Dri
 - Source evidence: a bounded research subagent verified the primary documents and produced the factual corpus; the main agent integrated and checked those references and financial invariants.
 
 No credentials are embedded in authored source or this history. Hosting repository credentials are passed to the Sites helper through hidden stdin.
+# Results-comparison completion — 30 October 2026
+
+- Added primary-period and reporting-entity evidence to analysis schema v2,
+  deterministic QoQ/YoY comparison and a source-inspectable results drawer.
+- Comparisons retain gaps, isolate subsidiaries/bases/definitions, expose exact
+  INR conversions and withhold conflicting figures or nonpositive denominators.
+- Added real SQLite API checks for owner isolation and changed-document
+  invalidation, result-engine tests and server-rendered component tests.
+- Verified the completed scheduled cloud run and its authenticated source access:
+  20 quote series, 168 filings, no source errors and a clear queue at 17:37:51 IST.
+- The browser verification tool timed out during this phase. API/type/SSR tests
+  pass; the new results card's browser layout is not yet verified. Earlier 390 px
+  verification covers the portfolio shell, not this new card.
+- Hosted ChatGPT inference still awaits approved registration. No synthetic
+  comparison figures or mocked model output were deployed as real financial data.
+
 # Portfolio monitoring expansion — 30 October 2026
 
 - Expanded from a single-company landing view to a 20-company NSE monitoring

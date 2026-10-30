@@ -4,7 +4,7 @@ import ts from 'typescript';
 import {DatabaseSync} from 'node:sqlite';
 const root=new URL('../',import.meta.url),output=new URL('../.sites-runtime/portfolio-tests/',import.meta.url);
 await fs.mkdir(output,{recursive:true});
-const modules=['repository','finance','market-calculations','filing-content','portfolio/companies','portfolio/types','portfolio/storage','portfolio/sources','portfolio/monitor','portfolio/chatgpt-auth','portfolio/analysis','portfolio/api'];
+const modules=['repository','finance','market-calculations','filing-content','portfolio/companies','portfolio/types','portfolio/storage','portfolio/sources','portfolio/monitor','portfolio/chatgpt-auth','portfolio/results','portfolio/analysis','portfolio/api'];
 const moduleUrl=name=>new URL(name.replaceAll('/','-')+'.mjs',output);
 await fs.writeFile(new URL('env.mjs',output),'export const env=globalThis.__portfolioTestEnv;');
 for(const name of modules){
@@ -13,6 +13,7 @@ for(const name of modules){
   await fs.writeFile(moduleUrl(name),js);
 }
 const sqlite=new DatabaseSync(':memory:');
+sqlite.exec('CREATE TABLE provider_cache(key TEXT PRIMARY KEY,data TEXT NOT NULL,fetched_at TEXT NOT NULL)');
 const binding={prepare(sql){let values=[];return {bind(...v){values=v;return this;},async run(){const result=sqlite.prepare(sql).run(...values);return {meta:{changes:Number(result.changes)}};},async first(){return sqlite.prepare(sql).get(...values)||null;},async all(){return {results:sqlite.prepare(sql).all(...values)};}};},async batch(statements){const result=[];sqlite.exec('BEGIN');try{for(const s of statements)result.push(await s.run());sqlite.exec('COMMIT');return result;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
 globalThis.__portfolioTestEnv={DB:binding};
 const {companies}=await import(moduleUrl('portfolio/companies'));
@@ -52,6 +53,18 @@ const passages=[{id:'p1-0',page:1,text:'Consolidated results. INR crore. Revenue
 assert.equal(model.validateAnalysis(analysis,passages,'model','hash').metrics[0].value,100);assert.throws(()=>model.validateAnalysis({...analysis,metrics:[{...analysis.metrics[0],value:999}]},passages,'model','hash'));assert.throws(()=>model.validateAnalysis({...analysis,claims:[{...analysis.claims[0],quote:'Invented statement from nowhere'}]},passages,'model','hash'));assert.equal(model.reportedComparison({value:110,unit:'INR crore',basis:'consolidated'},{value:100,unit:'INR crore',basis:'standalone'}),null);
 const completed={type:'response.completed',response:{status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify(analysis)}]}]}};
 assert.equal((await model.readResponseStream(new Response(`data: ${JSON.stringify(completed)}\n\n`))).summary,analysis.summary);await assert.rejects(()=>model.readResponseStream(new Response('data: {"type":"response.output_text.delta","delta":"partial"}\n\n')),/before analysis completed/);await assert.rejects(()=>model.readResponseStream(new Response('',{status:403})),/not authorized/);
+// Exercise the actual stored-analysis/results API, including owner isolation
+// and content-hash invalidation. These are test fixtures, never production data.
+const quarterPassages=[['2026-09-30',120],['2026-06-30',100],['2025-09-30',80]].map(([end,value],i)=>({id:`p${i+1}-0`,page:i+1,text:`Reliance Industries Limited. Consolidated INR crore. Quarter ended ${end}. Revenue was ${value} crore.`}));
+const quarterPayload={...analysis,resultPeriod:{periodEnd:'2026-09-30',durationMonths:3,passageId:'p1-0',quote:quarterPassages[0].text},claims:[{text:analysis.summary,passageId:'p1-0',quote:'Revenue was 120 crore.'},{text:analysis.whyItMatters,passageId:'p1-0',quote:'Revenue was 120 crore.'}],metrics:quarterPassages.map((p,i)=>({name:'Revenue',value:[120,100,80][i],unit:'INR crore',period:['2026-09-30','2026-06-30','2025-09-30'][i],basis:'Consolidated',passageId:p.id,quote:`Revenue was ${[120,100,80][i]} crore.`,context:{periodEnd:['2026-09-30','2026-06-30','2025-09-30'][i],durationMonths:3,entity:'Reliance Industries Limited',scope:'consolidated',definition:'Revenue',passageId:p.id,quote:p.text}}))};
+const verifiedQuarter=model.validateAnalysis(quarterPayload,quarterPassages,'test-model','hash');
+sqlite.prepare('INSERT INTO portfolio_analysis(owner,filing_id,content_hash,data,updated_at) VALUES(?,?,?,?,?)').run('alice',fetched[0].id,'hash',JSON.stringify(verifiedQuarter),now.toISOString());
+sqlite.prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?)').run('portfolio-pdf:'+fetched[0].id,JSON.stringify({contentHash:'hash'}),now.toISOString());
+const quarterApi=await (await handlePortfolio(local(`/filings/${fetched[0].id}/results`))).json();assert.equal(quarterApi.status,'partial');assert.ok(Math.abs(quarterApi.groups[0].rows[0].qoq.pct-20)<1e-9);assert.equal(quarterApi.groups[0].rows[0].yoy.pct,50);assert.equal(quarterApi.groups[0].rows[1].current,null);
+assert.equal((await (await handlePortfolio(local(`/filings/${fetched[0].id}/results`,'GET',null,'bob'))).json()).status,'unavailable');
+sqlite.prepare('UPDATE provider_cache SET data=? WHERE key=?').run(JSON.stringify({contentHash:'changed-document'}),'portfolio-pdf:'+fetched[0].id);
+assert.equal((await (await handlePortfolio(local(`/filings/${fetched[0].id}/results`))).json()).status,'unavailable','Changed source content invalidates its old financial comparison');
+const noCurrency=quarterPassages.map(p=>({...p,text:p.text.replace('INR crore','USD million')}));const noCurrencyValue={...quarterPayload,metrics:[{...quarterPayload.metrics[0],context:null}],resultPeriod:null};await assert.rejects(async()=>model.validateAnalysis(noCurrencyValue,noCurrency,'test-model','hash'),/unit and currency/);
 Object.assign(globalThis.__portfolioTestEnv,{FINN_CHATGPT_HOSTED_APPROVED:'true',FINN_CHATGPT_CLIENT_ID:config.clientId,FINN_CHATGPT_REDIRECT_URI:config.redirectUri,FINN_CHATGPT_ENCRYPTION_KEY:config.encryptionKey,FINN_CHATGPT_MODEL:config.model,FINN_CHATGPT_SCOPES:'openid offline_access inference_scope',FINN_CHATGPT_TOKEN_AUTH:'none'});
 let expectedNonce='',exchanges=0;
 globalThis.fetch=async(url,options)=>{

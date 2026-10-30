@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import ts from 'typescript';
+const source=await fs.readFile(new URL('../lib/portfolio/results.ts',import.meta.url),'utf8');
+const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {validPeriodEnd,supportsDate,validateMetricContext,buildResultsComparison,analysisSchemaVersion}=await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const filing={id:'nse-results',ticker:'TEST',publishedAt:'2026-10-30T11:00:00.000Z',sourceUrl:'https://www.nseindia.com/',attachmentUrl:'https://nsearchives.nseindia.com/test.pdf'};
+const report=(metrics,periodEnd='2026-09-30')=>({filing,analysis:{schemaVersion:analysisSchemaVersion,resultPeriod:{periodEnd,durationMonths:3,passageId:'p1-0',quote:`Quarter ended ${periodEnd}`},contentHash:'verified-document-hash',metrics}});
+function metric(name,value,end,overrides={}){return {name,value,unit:'INR crore',period:end,basis:'Consolidated',passageId:'p1-0',quote:`${name}: ${value}`,context:{periodEnd:end,durationMonths:3,entity:'Example Limited',scope:'consolidated',definition:name,passageId:'p1-0',quote:`Example Limited. Consolidated INR crore. Quarter ended ${end}. ${name}: ${value}`},...overrides};}
+const metrics=['Revenue','EBITDA','PBT','PAT'].flatMap(name=>[metric(name,120,'2026-09-30'),metric(name,100,'2026-06-30'),metric(name,80,'2025-09-30')]);
+const full=buildResultsComparison(filing,[report(metrics)]);assert.equal(full.status,'ready');for(const row of full.groups[0].rows){assert.ok(Math.abs(row.qoq.pct-20)<1e-9);assert.equal(row.yoy.pct,50);assert.equal(row.qoq.previous.periodEnd,'2026-06-30');assert.equal(row.yoy.previous.periodEnd,'2025-09-30');assert.equal(row.current.source.contentHash,'verified-document-hash');}
+assert.equal(validPeriodEnd('2026-02-30'),false);assert.equal(validPeriodEnd('2024-02-29'),true);assert.equal(validPeriodEnd('2026-09-29'),false);
+for(const date of ['30 September 2026','September 30, 2026','30-Sep-2026','30.09.2026','2026-09-30'])assert.equal(supportsDate(date,'2026-09-30'),true,date);
+assert.equal(supportsDate('30 September 2025','2026-09-30'),false);assert.equal(supportsDate('30.09.26','2026-09-30'),false);
+const evidence='Example Limited. Consolidated, INR crore. Three months ended 30 September 2026. Revenue from operations 120.';
+const context={periodEnd:'2026-09-30',durationMonths:3,entity:'Example Limited',scope:'consolidated',definition:'Revenue from operations',passageId:'p1-0',quote:evidence};
+assert.equal(validateMetricContext(context,metric('Revenue',120,'2026-09-30'),[{id:'p1-0',page:1,text:evidence}]).periodEnd,'2026-09-30');
+for(const change of [{periodEnd:'2025-09-30'},{scope:'standalone'},{durationMonths:6},{definition:'Total income'},{quote:evidence+' Invented sentence.'}])assert.throws(()=>validateMetricContext({...context,...change},metric('Revenue',120,'2026-09-30'),[{id:'p1-0',page:1,text:evidence}]));
+const absent=buildResultsComparison(filing,[report([metric('Revenue',120,'2026-09-30')])]);assert.equal(absent.status,'partial');assert.equal(absent.groups[0].rows[0].qoq.status,'unavailable');assert.equal(absent.groups[0].rows[1].current,null);
+for(const previous of [0,-100]){const value=buildResultsComparison(filing,[report([metric('PAT',120,'2026-09-30'),metric('PAT',previous,'2026-06-30')])]);assert.equal(value.groups[0].rows[3].qoq.pct,null);assert.match(value.groups[0].rows[3].qoq.reason,/zero or negative/);}
+const mismatch=buildResultsComparison(filing,[report([metric('Revenue',120,'2026-09-30'),metric('Revenue',100,'2026-06-30',{basis:'Standalone',context:{...context,periodEnd:'2026-06-30',scope:'standalone'}})])]);assert.equal(mismatch.groups[0].rows[0].qoq.status,'unavailable');
+const ytd=metric('Revenue',100,'2026-06-30');ytd.context.durationMonths=6;assert.equal(buildResultsComparison(filing,[report([metric('Revenue',120,'2026-09-30'),ytd])]).groups[0].rows[0].qoq.status,'unavailable');
+const conflict=buildResultsComparison(filing,[report([metric('Revenue',120,'2026-09-30'),metric('Revenue',100,'2026-06-30'),metric('Revenue',105,'2026-06-30')])]);assert.match(conflict.groups[0].rows[0].qoq.reason,/conflict/);
+const converted=buildResultsComparison(filing,[report([metric('Revenue',120,'2026-09-30'),metric('Revenue',10000,'2026-06-30',{unit:'INR lakh'})])]);assert.ok(Math.abs(converted.groups[0].rows[0].qoq.pct-20)<1e-9);assert.equal(converted.groups[0].rows[0].qoq.previous.conversionFactor,.01);
+const wrongDefinition=metric('PAT',100,'2026-06-30');wrongDefinition.context.definition='Profit attributable to owners';assert.equal(buildResultsComparison(filing,[report([metric('PAT',120,'2026-09-30'),wrongDefinition])]).groups[0].rows[3].qoq.status,'unavailable');
+const subsidiary=metric('Revenue',100,'2026-06-30');subsidiary.context.entity='Subsidiary Limited';assert.equal(buildResultsComparison(filing,[report([metric('Revenue',120,'2026-09-30'),subsidiary])]).groups[0].rows[0].qoq.status,'unavailable');
+const old={filing:{...filing,id:'earlier',publishedAt:'2026-07-30T10:00:00.000Z'},analysis:report([metric('Revenue',95,'2026-06-30')]).analysis};
+const preferCurrent=buildResultsComparison(filing,[report([metric('Revenue',120,'2026-09-30'),metric('Revenue',100,'2026-06-30')]),old]);assert.equal(preferCurrent.groups[0].rows[0].qoq.previous.value,100);
+const future={...old,filing:{...old.filing,publishedAt:'2026-11-01T10:00:00.000Z'}};assert.equal(buildResultsComparison(filing,[report([metric('Revenue',120,'2026-09-30')]),future]).groups[0].rows[0].qoq.status,'unavailable');
+const other={...old,filing:{...old.filing,ticker:'OTHER'}};assert.equal(buildResultsComparison(filing,[report([metric('Revenue',120,'2026-09-30')]),other]).groups[0].rows[0].qoq.status,'unavailable');
+assert.equal(buildResultsComparison(filing,[{...report(metrics),analysis:{...report(metrics).analysis,schemaVersion:1}}]).status,'unavailable');
+assert.equal(buildResultsComparison(filing,[report([metric('Revenue',999,'2026-12-31')])]).status,'unavailable');
+const oldOnly=buildResultsComparison(filing,[report([metric('Revenue',100,'2026-06-30')])]);assert.equal(oldOnly.status,'unavailable');assert.equal(oldOnly.periodEnd,'2026-09-30');assert.match(oldOnly.reason,/not been substituted/);
+const yearBoundary=buildResultsComparison(filing,[report([metric('Revenue',120,'2026-03-31'),metric('Revenue',100,'2025-12-31'),metric('Revenue',80,'2025-03-31')],'2026-03-31')]);assert.equal(yearBoundary.groups[0].rows[0].qoq.targetPeriod,'2025-12-31');assert.equal(yearBoundary.groups[0].rows[0].yoy.pct,50);
+console.log('PASS: cited quarter contexts, all four metrics, exact QoQ/YoY dates, unit conversions, gaps, zero/negative comparators, conflicting figures/definitions, YTD isolation, entity/basis isolation, current-filing preference, future-report exclusion and legacy-cache withholding.');

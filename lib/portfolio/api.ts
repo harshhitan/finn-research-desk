@@ -1,7 +1,7 @@
 import {env} from "cloudflare:workers";
 import {database,session} from "../repository";
 import {seedPortfolio,enqueueCollection,runJobs,portfolioSnapshot,saveMonitoringRules,monitoringRules} from "./monitor";
-import {analyseFiling,portfolioDocument} from "./analysis";
+import {analyseFiling,portfolioDocument,resultsForFiling} from "./analysis";
 import {subscriptionStatus,startSubscription,finishSubscription,disconnectSubscription} from "./chatgpt-auth";
 const clearedCookie="finn_chatgpt_oauth=; HttpOnly; Secure; SameSite=Lax; Path=/api/portfolio/chatgpt; Max-Age=0";
 async function equalSecret(a:string,b:string){if(!a||!b)return false;const hash=async(s:string)=>new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s)));const [aa,bb]=await Promise.all([hash(a),hash(b)]);let value=0;for(let i=0;i<aa.length;i++)value|=aa[i]^bb[i];return value===0;}
@@ -38,6 +38,8 @@ export async function handlePortfolio(request:Request){
     if(document&&request.method==="GET")return json(await portfolioDocument(document[1]));
     const analysis=path.match(/^filings\/([a-zA-Z0-9-]+)\/analyse$/);
     if(analysis&&request.method==="POST")return json(await analyseFiling(who.owner,analysis[1]));
+    const results=path.match(/^filings\/([a-zA-Z0-9-]+)\/results$/);
+    if(results&&request.method==="GET")return json(await resultsForFiling(who.owner,results[1]));
     if(path==="alerts/read"&&request.method==="POST"){await database().prepare("UPDATE portfolio_alerts SET read_at=? WHERE owner=? AND read_at IS NULL").bind(new Date().toISOString(),who.owner).run();return json({read:true});}
     if(path==="chatgpt/status"&&request.method==="GET")return json(await subscriptionStatus(who.owner));
     if(path==="chatgpt/start"&&request.method==="GET"){
