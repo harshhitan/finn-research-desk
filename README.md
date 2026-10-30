@@ -14,6 +14,7 @@ A responsive, installable web application for understanding Reliance Industries.
 - Issuer-filing drawers fetch the original PDF on demand, extract and cache page text, show a key passage where a subject is identifiable, and link to the exact PDF page. Scanned, blocked or oversized documents show an explicit reason and a retry/original action.
 - In-app alert preferences and durable, deduplicated alert triggers. Observation polling runs while the app is open.
 - Responsive desktop and phone layouts, bottom navigation, accessible dialog dismissal/focus containment and a web-app manifest.
+- Chart lab: source-checked revenue/profitability, profit vs. operating cash, net debt, segment EBITDA and completed-session price/volume. Annual or filing-based quarterly comparison where verified; automatic supporting charts on relevant research answers. Every point exposes its provenance, units, accounting basis and any calculation inputs. CSV and standalone SVG exports include the evidence.
 
 ## Architecture
 
@@ -42,6 +43,8 @@ No model API key is required. Optional `FINN_TEST_URL` changes the API test orig
 node node_modules/typescript/bin/tsc --noEmit
 node scripts/test-finance.mjs
 node scripts/test-filings.mjs
+node scripts/test-plots.mjs
+node scripts/test-plot-api.mjs
 node scripts/test-api.mjs
 ```
 
@@ -59,6 +62,9 @@ The API test needs a running, migrated preview. It uses its own temporary sessio
 | `GET /api/research/history` | Visitor's last 20 research runs |
 | `GET /api/evidence/{id}` | Source passage and parent document |
 | `GET /api/documents/{issuer-id}/content` | Extracted original filing text, page references and extraction status |
+| `GET /api/plots` | Available recipes and the `plot_verified_data` tool contract |
+| `POST /api/plots` | Build a plot from a recipe, frequency, context, optional ticker and ISO date window |
+| `GET /api/plots/export?...&format=csv|svg` | Download values/provenance or a standalone vector chart |
 | `GET/POST /api/saved` | Read/toggle source or filing saves |
 | `GET/PUT /api/alert-rules` | Read/validate/persist preferences |
 | `POST /api/refresh` | Bounded manual refresh, one-minute cooldown |
@@ -72,6 +78,16 @@ UI polling: 60 seconds while open. Server-side public-price cache: one hour. Iss
 Announcement retrieval covers the latest issuer page, retaining previously observed records (up to 100). It does not claim exhaustive NSE/BSE coverage. New attachments are linked and classified by title, not silently treated as indexed research evidence. Research remains restricted to allowed annual reports and transcripts.
 
 Opening an issuer filing now loads its PDF text into the drawer. Successful extraction is cached for 24 hours with a SHA-256 content hash; source errors are briefly cached and may be retried. Extraction accepts only known indexed Reliance filing IDs and allowlisted source hosts, with bounded bytes/pages/text and no document-script execution. It does not add issuer filings to the pull-research corpus.
+
+## Plotting contract
+
+Example request: `{"kind":"cash-quality","frequency":"annual","ticker":"RELIANCE","context":"explore"}`. Optional `from`/`to` dates filter reporting-period ends or market-session dates. The endpoint accepts **no caller-supplied numerical values**, estimates or forecast arrays.
+
+Chart construction matches raw values against metric- and period-specific primary-source fact paths. Missing facts, source conflicts, mixed units, unavailable periods and unsupported comparisons produce gaps or an unavailable state. Ratios expose their exact validated inputs and formula. Research-context charts retain the permitted annual-report/transcript restriction; quarterly results-filing and market charts are explicitly separate exploratory views. Quarterly lines break across missing quarters instead of joining unobserved periods. No smoothing or interpolation is used to manufacture intermediate data.
+
+The Q1 FY2027 filing comparison table was rechecked from the actual results PDF before plotting quarterly figures. Its prior-Q1 EBITDA excludes the disclosed investment-sale gain; this adjustment is retained in the plot basis, not mixed into reported annual figures. Segment EBITDA is a business-level comparison, not a revenue-share pie.
+
+Candlesticks are withheld because the current market store does not include verified OHLC. Guidance plots are withheld until numerical targets and actuals can be aligned by metric, scope, unit and horizon. SVG metadata and CSV rows include source URLs, fact paths, page/section references and calculation inputs. Exports are served as standard HTTP attachments so they work without browser-specific blob handling.
 
 ## Scope and limitations
 

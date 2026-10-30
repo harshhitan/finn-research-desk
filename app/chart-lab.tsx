@@ -1,0 +1,12 @@
+"use client";
+
+import { useState } from "react";
+import { CircleHelp, ShieldCheck } from "lucide-react";
+import { plotCatalogue, type PlotKind } from "../lib/plot-types";
+import PlotCard from "./plot-card";
+
+export default function ChartLab({onEvidence}:{onEvidence:(id:string)=>void}){
+  const [kind,setKind]=useState<PlotKind>("performance");const [frequency,setFrequency]=useState<"annual"|"quarterly">("annual");const [from,setFrom]=useState("");const [to,setTo]=useState("");
+  const recipe=plotCatalogue.find(p=>p.id===kind)!;
+  return <><div className="section-head"><div><div className="eyebrow">THE NUMBERS, IN VIEW</div><h2>Chart lab</h2></div><span className="tag green"><ShieldCheck size={12}/> Source-checked</span></div><p className="chart-lab-intro">Choose a question. FINN builds the plot from verified facts, then lets you inspect every value and calculation.</p><label className="chart-recipe-picker">Question to visualise<select aria-label="Chart question" value={kind} onChange={e=>{const id=e.target.value as PlotKind;setKind(id);const next=plotCatalogue.find(p=>p.id===id)!;if(!next.frequencies.includes("quarterly" as never))setFrequency("annual")}}>{plotCatalogue.map(p=><option key={p.id} value={p.id}>{p.label}{!p.frequencies.length?" · needs more data":""}</option>)}</select><span>{recipe.description}</span></label><div className="chart-controls">{recipe.frequencies.length>0&&kind!=="price-volume"&&<label>Reporting basis<select aria-label="Chart reporting frequency" value={frequency} onChange={e=>setFrequency(e.target.value as "annual"|"quarterly")}><option value="annual">Annual</option>{recipe.frequencies.includes("quarterly" as never)&&<option value="quarterly">Quarterly · filing comparison</option>}</select></label>}<label>From date<input aria-label="Chart start date" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>Through date<input aria-label="Chart end date" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label>{(from||to)&&<button className="text-button" onClick={()=>{setFrom("");setTo("")}}>Reset dates</button>}</div><PlotCard request={{kind,frequency,ticker:"RELIANCE",context:"explore",...(from?{from}:{}),...(to?{to}:{})}} onEvidence={onEvidence}/><div className="soft-note"><CircleHelp size={16}/>The plotting tool accepts a chart choice and date window, never invented values. Missing facts, unsupported comparisons and unavailable OHLC data produce a clear gap. Source tables and CSV downloads retain raw numbers, units, basis and citations.</div></>;
+}

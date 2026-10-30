@@ -5,9 +5,15 @@ import { getMarket } from "../../../lib/market";
 import { getAnnouncements, issuerDocuments, issuerFeed } from "../../../lib/announcements";
 import { readFiling, type FilingContent } from "../../../lib/filing-content";
 import type { Corpus, Rules } from "../../../lib/types";
+import { z } from "zod";
+import { buildPlot, plotCsv } from "../../../lib/plots";
+import { plotSvg } from "../../../lib/plot-export";
+import { plotCatalogue, plotKinds } from "../../../lib/plot-types";
 
 export const dynamic = "force-dynamic";
 const corpus = rawCorpus as unknown as Corpus;
+const plotDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value);
+const plotRequest=z.object({kind:z.enum(plotKinds),frequency:z.enum(["annual","quarterly"]).optional(),from:plotDate.optional(),to:plotDate.optional(),ticker:z.string().max(30).optional(),context:z.enum(["research","explore"]).optional()}).strict();
 
 async function evaluateAlerts(owner:string) {
   const rules=await getRules(owner);const market=await getMarket();const now=new Date().toISOString();const db=database();
@@ -28,6 +34,20 @@ async function handle(request:Request) {
   if(request.method!=="GET") {const origin=request.headers.get("origin");if(origin && origin!==url.origin)return json({error:"Cross-origin write rejected"},403);}
   try{
     if(path==="health")return json({status:"ok",company:"RELIANCE",database:(await database().prepare("SELECT 1 AS ok").first())?"ready":"unavailable",researchMode:"extractive",corpusVersion:rawCorpus.researchedAt});
+    if(path==="plots"&&request.method==="GET")return json({tool:"plot_verified_data",recipes:plotCatalogue,policy:"Only validated stored facts or timestamped provider observations. No caller-supplied values, interpolation or forecasts."});
+    if(path==="plots/export"&&request.method==="GET"){
+      const params=Object.fromEntries(url.searchParams);const format=params.format;delete params.format;
+      const parsed=plotRequest.safeParse(params);if(!parsed.success||!["csv","svg"].includes(format))return json({error:"Choose a valid plot and CSV/SVG export format."},400);
+      const spec=buildPlot(corpus,parsed.data,parsed.data.kind==="price-volume"?await getMarket():undefined);
+      if(spec.status!=="ready")return json({error:spec.reason},422);
+      return new Response(format==="csv"?`\ufeff${plotCsv(spec)}`:plotSvg(spec),{headers:{...headers,"Content-Type":format==="csv"?"text/csv; charset=utf-8":"image/svg+xml; charset=utf-8","Content-Disposition":`attachment; filename="finn-${parsed.data.kind}.${format}"`,"X-Content-Type-Options":"nosniff"}});
+    }
+    if(path==="plots"&&request.method==="POST"){
+      const parsed=plotRequest.safeParse(await request.json().catch(()=>null));
+      if(!parsed.success)return json({error:"Choose a supported plot, annual/quarterly frequency and valid YYYY-MM-DD dates. Custom or estimated data values are not accepted."},400);
+      const market=parsed.data.kind==="price-volume"?await getMarket():undefined;
+      return json(buildPlot(corpus,parsed.data,market));
+    }
     const contentRoute=path.match(/^documents\/(issuer-[a-f0-9]{20})\/content$/);
     if(contentRoute&&request.method==="GET"){
       const id=contentRoute[1];

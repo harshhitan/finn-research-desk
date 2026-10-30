@@ -531,7 +531,8 @@
             "revenueGrowthPct": 96.6,
             "ebitdaGrowthPct": 218.7
           }
-        ]
+        ],
+        "period": "FY2026"
       },
       "basis": "Group segment EBITDA growth; company-reported capex"
     },
@@ -727,7 +728,25 @@
         "reportedEbitdaYoyPct": -6.8,
         "recurringEbitdaYoyPct": 10.1,
         "reportedPatYoyPct": -24.6,
-        "recurringPatYoyPct": 6.1
+        "recurringPatYoyPct": 6.1,
+        "quarters": {
+          "Q1 FY2026": {
+            "grossRevenue": 273252,
+            "comparisonEbitda": 49100,
+            "netDebt": 117581
+          },
+          "Q4 FY2026": {
+            "grossRevenue": 325290,
+            "comparisonEbitda": 48588,
+            "netDebt": 124717
+          },
+          "Q1 FY2027": {
+            "grossRevenue": 340257,
+            "comparisonEbitda": 54067,
+            "netDebt": 122914
+          }
+        },
+        "quarterComparisonBasis": "Consolidated financial highlights, Q1 FY2027 release. Prior Q1 EBITDA excludes the disclosed investment-sale gain of INR 8,924 crore; current and previous-quarter values are as presented in this same comparison table."
       },
       "basis": "Push-only results filing; Q1 FY2027"
     },
@@ -944,7 +963,8 @@
         "e-results-q1"
       ],
       "note": "Reported EBITDA 58,024, PBT 37,146 and PAT including associates/JVs 30,783 are reconstructed by adding the disclosed 8,924 listed-investment gain to the recurring comparative table (49,100 / 28,222 / 21,859). Use recurring columns for recurring YoY comparisons; default columns are reported.",
-      "recurringPbt": 28222
+      "recurringPbt": 28222,
+      "comparisonEbitda": 49100
     },
     {
       "period": "Q4 FY2026",
@@ -958,7 +978,8 @@
       "capex": 40560,
       "evidenceIds": [
         "e-results-q1"
-      ]
+      ],
+      "comparisonEbitda": 48588
     },
     {
       "period": "Q1 FY2027",
@@ -973,7 +994,8 @@
       "evidenceIds": [
         "e-results-q1",
         "e-call-q1"
-      ]
+      ],
+      "comparisonEbitda": 54067
     }
   ],
   "segments": [

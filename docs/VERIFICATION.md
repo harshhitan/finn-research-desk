@@ -25,3 +25,9 @@ The deployable product is scoped to Reliance. These checks do not assert multi-c
 ## Filing drawer regression — 29 October
 
 The CITIC CLSA investor-meeting filing originally displayed metadata only. The corrected flow downloads and extracts that actual one-page PDF, caches it, and displays its main passage plus expandable page text. Verified through the API and the browser drawer. Regression checks confirm the event, location and dates survive extraction, repeated reads use the cached hash/timestamp, unknown filing IDs return 404, and invalid/oversized/redirected sources produce clear failures.
+
+## Evidence-backed plots — 30 October
+
+`test-plots.mjs` checks source paths, ratio inputs, absent cash-flow periods, tampered/conflicting values, units, issuer isolation, comparative-quarter adjustment, segment period alignment, unavailable guidance/OHLC, timestamped provider references and CSV provenance. `test-plot-api.mjs` checks request validation (including rejection of invented value arrays), date gaps, research-corpus restrictions, chart exports and their evidence metadata.
+
+Browser checks: point selection exposes calculated margin inputs and source links; quarterly SVG paths break across missing quarters; unsupported candlesticks explain absent OHLC; cash research automatically attaches its supported comparison; a 390-pixel layout has no horizontal page overflow, and the absent FY2024 CFO is labelled as a gap. The initial browser blob-download check stalled; export delivery was replaced with HTTP attachments and verified through their actual response headers and CSV/SVG content.
