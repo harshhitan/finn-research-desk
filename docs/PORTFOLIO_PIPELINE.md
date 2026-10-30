@@ -77,6 +77,11 @@ not email or device push. New rules do not retroactively manufacture filing aler
 
 ## Unattended writer
 
+An enabled hourly Site schedule is linked as `FINN portfolio monitoring`
+(`Automation_ad78e94f63288191846884801456066c`, Asia/Calcutta). The scheduling
+service rejected a 30-minute interval because it allows at most one run per hour.
+Schedule creation proves configuration, not a completed cloud execution.
+
 `POST /api/portfolio/jobs/run` requires `X-Finn-Job-Token` plus the Site's supported
 service-access boundary. The configured job secret matches the Site's service
 access credential, which a fresh scheduled task obtains through `get_site`.

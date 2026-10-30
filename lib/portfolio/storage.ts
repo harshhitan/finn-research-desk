@@ -5,7 +5,7 @@ export function ensurePortfolio(){
     const db=database();
     // Idempotent setup also supports an existing deployed D1 database. No old
     // research tables are replaced; indexes enforce durable idempotency.
-    for(const sql of [
+    const statements=[
       "CREATE TABLE IF NOT EXISTS portfolio_companies(ticker TEXT PRIMARY KEY,data TEXT NOT NULL)",
       "CREATE TABLE IF NOT EXISTS portfolio_filings(id TEXT PRIMARY KEY,ticker TEXT NOT NULL,published_at TEXT NOT NULL,attachment_url TEXT,data TEXT NOT NULL,first_seen TEXT NOT NULL)",
       "CREATE INDEX IF NOT EXISTS portfolio_filings_window ON portfolio_filings(published_at,ticker)",
@@ -21,7 +21,8 @@ export function ensurePortfolio(){
       "CREATE TABLE IF NOT EXISTS portfolio_oauth(state_hash TEXT PRIMARY KEY,owner TEXT NOT NULL,transaction_data TEXT NOT NULL,expires_at TEXT NOT NULL)",
       "CREATE TABLE IF NOT EXISTS portfolio_accounts(owner TEXT PRIMARY KEY,subject TEXT NOT NULL,credentials TEXT NOT NULL,expires_at TEXT NOT NULL,scopes TEXT NOT NULL,updated_at TEXT NOT NULL)",
       "CREATE TABLE IF NOT EXISTS portfolio_model_leases(owner TEXT PRIMARY KEY,token TEXT NOT NULL,expires_at TEXT NOT NULL)",
-    ])await db.prepare(sql).run();
+    ];
+    await db.batch(statements.map(sql=>db.prepare(sql)));
   })().catch(e=>{ready=undefined;throw e;});
   return ready;
 }

@@ -34,7 +34,7 @@ export async function seedPortfolio(){if(!seeded)seeded=(async()=>{await ensureP
 export async function enqueueCollection(force=false){
   const db=database(),now=new Date(),bucket=Math.floor(now.getTime()/(15*60000));
   for(const c of companies){const prior=await db.prepare("SELECT last_success FROM portfolio_sources WHERE ticker=? AND source='NSE announcements'").bind(c.ticker).first<{last_success:string}>();if(!force&&prior?.last_success&&now.getTime()-Date.parse(prior.last_success)<14*60000)continue;
-    await db.prepare("INSERT OR IGNORE INTO portfolio_jobs(id,ticker,kind,status,created_at,available_at) VALUES(?,?,'collect','queued',?,?)").bind(`collect:${c.ticker}:${bucket}`,c.ticker,now.toISOString(),now.toISOString()).run();
+    await db.prepare("INSERT OR IGNORE INTO portfolio_jobs(id,ticker,kind,status,created_at,available_at) SELECT ?,?,'collect','queued',?,? WHERE NOT EXISTS(SELECT 1 FROM portfolio_jobs WHERE ticker=? AND kind='collect' AND status IN ('queued','retry','running'))").bind(`collect:${c.ticker}:${bucket}`,c.ticker,now.toISOString(),now.toISOString(),c.ticker).run();
   }
 }
 export async function storeFilings(filings:Filing[]){
@@ -84,14 +84,16 @@ async function collect(ticker:string){
 export async function runJobs(limit=2,analyse?:(owner:string,filingId:string)=>Promise<unknown>){
   await ensurePortfolio();const db=database(),token=crypto.randomUUID(),now=new Date().toISOString();
   const lock=await db.prepare("INSERT INTO portfolio_locks(name,token,expires_at) VALUES('collector',?,?) ON CONFLICT(name) DO UPDATE SET token=excluded.token,expires_at=excluded.expires_at WHERE portfolio_locks.expires_at<? RETURNING token").bind(token,new Date(Date.now()+180000).toISOString(),now).first<{token:string}>();
-  if(lock?.token!==token)return {busy:true,processed:0};let processed=0;
+  if(lock?.token!==token)return {busy:true,processed:0};let processed=0;const started=Date.now();
   try{
     await db.prepare("UPDATE portfolio_jobs SET status='retry',available_at=?,lease_until=NULL,error='Worker lease expired; recovered' WHERE status='running' AND lease_until<?").bind(now,now).run();
     for(let i=0;i<Math.min(4,Math.max(1,limit));i++){
+      if(Date.now()-started>45000)break;
       const job=await db.prepare("UPDATE portfolio_jobs SET status='running',attempts=attempts+1,lease_until=? WHERE id=(SELECT id FROM portfolio_jobs WHERE status IN ('queued','retry') AND available_at<=? ORDER BY created_at LIMIT 1) RETURNING id,ticker,kind,attempts,payload").bind(new Date(Date.now()+120000).toISOString(),new Date().toISOString()).first<{id:string;ticker:string;kind:string;attempts:number;payload:string|null}>();if(!job)break;
       try{if(job.kind==="collect")await collect(job.ticker);else if(analyse){const p=JSON.parse(job.payload||"{}");await analyse(p.owner,p.filingId);}else throw new Error("Model processor unavailable");await db.prepare("UPDATE portfolio_jobs SET status='done',finished_at=?,lease_until=NULL,error=NULL WHERE id=?").bind(new Date().toISOString(),job.id).run();}
       catch(error){const reason=error instanceof Error?error.message:"Provider processing failed";await db.prepare("UPDATE portfolio_jobs SET status=?,available_at=?,lease_until=NULL,error=?,finished_at=? WHERE id=?").bind(job.attempts>=3?"failed":"retry",new Date(Date.now()+Math.min(30,2**job.attempts)*60000).toISOString(),reason.slice(0,240),job.attempts>=3?new Date().toISOString():null,job.id).run();}
       processed++;
+      await db.prepare("UPDATE portfolio_locks SET expires_at=? WHERE name='collector' AND token=?").bind(new Date(Date.now()+180000).toISOString(),token).run();
     }
   }finally{await db.prepare("DELETE FROM portfolio_locks WHERE name='collector' AND token=?").bind(token).run();}
   return {busy:false,processed};
