@@ -17,7 +17,7 @@ port. Its mode-0600 config contains the exact Site URL and service token. Run it
 from an empty dedicated work directory using Python 3. The official Codex client
 handles subscription login/refresh. The worker uses stdio, disables execution,
 browser, search and app tools, denies approval requests, and restricts filesystem
-reads to the work directory for turns. Model calls run sequentially with a
+reads to the work directory plus platform-minimal paths through a named permission profile. Instruction-file discovery is disabled; FINN supplies its complete analysis instructions. Model calls run sequentially with a
 180-second deadline. Failed work retries at most three times automatically.
 
 Owner requests queue existing exchange filings, never arbitrary remote prompts.

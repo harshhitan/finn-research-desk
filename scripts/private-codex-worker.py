@@ -24,14 +24,17 @@ class Codex:
             [executable, "app-server", "-c", "features.shell_tool=false",
              "-c", "features.unified_exec=false", "-c", 'web_search="disabled"',
              "-c", "features.apps=false", "-c", "features.browser_use=false",
-             "-c", "features.computer_use=false", "-c", "features.multi_agent=false"],
+             "-c", "features.computer_use=false", "-c", "features.multi_agent=false",
+             "-c", "project_doc_max_bytes=0",
+             "-c", 'permissions.finn.filesystem={":minimal"="read",' + json.dumps(str(cwd)) + '="read"}',
+             "-c", "permissions.finn.network.enabled=false", "-c", 'default_permissions="finn"'],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             cwd=cwd, bufsize=0)
         self.selector = selectors.DefaultSelector()
         self.selector.register(self.process.stdout, selectors.EVENT_READ)
         self.pending = b""
         self.sequence = 0
-        self.request("initialize", {"clientInfo": {"name": "finn_personal", "title": "FINN Personal", "version": "1.0.0"}})
+        self.request("initialize", {"clientInfo": {"name": "finn_personal", "title": "FINN Personal", "version": "1.0.0"}, "capabilities": {"experimentalApi": True}})
         self.send({"method": "initialized", "params": {}})
 
     def send(self, value):
@@ -60,7 +63,9 @@ class Codex:
             message = self.read()
             if message.get("id") == identifier and "method" not in message:
                 if "error" in message:
-                    raise RuntimeError("Codex rejected " + method)
+                    code=message["error"].get("code")
+                    detail=str(message["error"].get("message", ""))[:400] if code in (-32600, -32602) or method == "thread/start" else ""
+                    raise RuntimeError("Codex rejected " + method + " (" + str(code) + ") " + detail)
                 return message["result"]
             self.reject_request(message)
 
@@ -76,14 +81,14 @@ class Codex:
 
     def analyse(self, job):
         thread = self.request("thread/start", {
-            "model": job["model"], "ephemeral": True, "sandbox": "read-only",
+            "model": job["model"], "ephemeral": True, "permissions": "finn",
             "approvalPolicy": "untrusted", "cwd": str(Path.cwd()),
             "baseInstructions": job["instructions"],
         })
         self.request("turn/start", {
             "threadId": thread["thread"]["id"],
             "input": [{"type": "text", "text": json.dumps(job["input"])}],
-            "sandboxPolicy": {"type": "readOnly", "access": {"type": "restricted", "includePlatformDefaults": True, "readableRoots": [str(Path.cwd())]}},
+            "permissions": "finn",
         })
         messages = []
         deadline = time.monotonic() + 180
@@ -165,7 +170,7 @@ def main():
                 print(json.dumps({"status": "idle"}), flush=True)
         except Exception as error:
             # Provider bodies/credentials never enter logs or Site error records.
-            print(json.dumps({"status": "error", "errorType": type(error).__name__}), flush=True)
+            print(json.dumps({"status": "error", "errorType": type(error).__name__, "stage": str(error) if isinstance(error, RuntimeError) else "Worker operation failed"}), flush=True)
             if job:
                 try:
                     api(config, "failed", {"id": job["id"], "lease": job["lease"]})

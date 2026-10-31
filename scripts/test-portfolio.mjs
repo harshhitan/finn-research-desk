@@ -121,5 +121,8 @@ const recovered=(await privateWorker.privateWorkerAction('claim',{})).job;assert
 await assert.rejects(()=>privateWorker.privateWorkerAction('complete',{id:expired.id,lease:expired.lease,analysis:quarterPayload}));
 await assert.rejects(()=>privateWorker.privateWorkerAction('complete',{id:recovered.id,lease:recovered.lease,analysis:{...quarterPayload,claims:[{...quarterPayload.claims[0],quote:'Fabricated evidence from nowhere.'}]}}));
 assert.equal(sqlite.prepare('SELECT content_hash FROM portfolio_analysis WHERE owner=? AND filing_id=?').get('alice',fetched[0].id).content_hash,'hash','Rejected evidence cannot overwrite prior verified analysis');
+sqlite.prepare("UPDATE portfolio_private_jobs SET status='failed',available_at='2999-01-01' WHERE id=?").run(recovered.id);
+await privateConfig.enqueuePrivateAnalysis('alice',fetched[0].id,'hash2');
+assert.ok((await privateWorker.privateWorkerAction('claim',{})).job,'An owner-requested retry is immediately eligible instead of inheriting an obsolete backoff');
 sqlite.close();
 console.log('PASS: 20 verified identities, exchange dates/identity, filing deduplication and amendments, durable retry and retained data, threshold/split guards, user isolation, origin/job authorization, disabled unapproved auth, credential encryption/tamper rejection, PKCE/JWT checks, model citation/number checks and stream completion.');
