@@ -21,6 +21,9 @@ export function ensurePortfolio(){
       "CREATE TABLE IF NOT EXISTS portfolio_oauth(state_hash TEXT PRIMARY KEY,owner TEXT NOT NULL,transaction_data TEXT NOT NULL,expires_at TEXT NOT NULL)",
       "CREATE TABLE IF NOT EXISTS portfolio_accounts(owner TEXT PRIMARY KEY,subject TEXT NOT NULL,credentials TEXT NOT NULL,expires_at TEXT NOT NULL,scopes TEXT NOT NULL,updated_at TEXT NOT NULL)",
       "CREATE TABLE IF NOT EXISTS portfolio_model_leases(owner TEXT PRIMARY KEY,token TEXT NOT NULL,expires_at TEXT NOT NULL)",
+      "CREATE TABLE IF NOT EXISTS portfolio_private_worker(owner TEXT PRIMARY KEY,last_seen TEXT NOT NULL)",
+      "CREATE TABLE IF NOT EXISTS portfolio_private_jobs(id TEXT PRIMARY KEY,owner TEXT NOT NULL,filing_id TEXT NOT NULL,content_hash TEXT NOT NULL,model TEXT NOT NULL,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,available_at TEXT NOT NULL,lease TEXT,lease_until TEXT,error TEXT,finished_at TEXT,UNIQUE(owner,filing_id,content_hash,model))",
+      "CREATE INDEX IF NOT EXISTS portfolio_private_jobs_claim ON portfolio_private_jobs(status,available_at)",
     ];
     await db.batch(statements.map(sql=>db.prepare(sql)));
   })().catch(e=>{ready=undefined;throw e;});

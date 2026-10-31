@@ -1,5 +1,38 @@
 # Portfolio monitoring and independent ChatGPT integration
 
+## Personal VM mode — 31 October 2026
+
+The owner clarified that FINN is for personal use. The Site retains its owner-only
+audience. This mode uses the official Codex client on the owner's Azure VM and an
+independent FINN worker, with no Hermes import and no Codex credential-file reads
+by FINN. The older hosted OAuth adapter below is a separate, disabled mode.
+
+Set `FINN_PRIVATE_CODEX_OWNER` to the actual Site identity from the existing
+portfolio preferences and `FINN_PRIVATE_CODEX_MODEL` to a model discovered through
+the installed client's `model/list`. Personal worker service access uses the
+existing `FINN_MONITOR_JOB_TOKEN` and Sites service-access header.
+
+`scripts/private-codex-worker.py` uses outbound HTTPS polling; it opens no inbound
+port. Its mode-0600 config contains the exact Site URL and service token. Run it
+from an empty dedicated work directory using Python 3. The official Codex client
+handles subscription login/refresh. The worker uses stdio, disables execution,
+browser, search and app tools, denies approval requests, and restricts filesystem
+reads to the work directory for turns. Model calls run sequentially with a
+180-second deadline. Failed work retries at most three times automatically.
+
+Owner requests queue existing exchange filings, never arbitrary remote prompts.
+The worker receives bounded, extracted passages. Results return with a random,
+expiring job lease and are revalidated against the document hash, exact quotes,
+figures, currencies and periods before being persisted. Replays, another account's
+requests, changed documents and fabricated evidence are rejected. Repeated source
+hash/model/schema combinations reuse verified analysis. Queue capacity is ten
+pending jobs; the application also checks a rolling request budget.
+
+The connection panel reports fresh worker heartbeats. Online status alone is not
+proof of successful financial extraction; verify a real filing through the whole
+queue and inspect its saved citations. Configuration of the private worker does
+not mark the older hosted OAuth registration approved.
+
 This is FINN-authored code. There is no Hermes import, credential adoption,
 shared third-party OAuth client, `~/.codex/auth.json` read or personal-login proxy.
 The existing Sites visitor authentication remains in place. A separate model

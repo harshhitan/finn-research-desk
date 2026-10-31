@@ -1,4 +1,5 @@
 import {database} from "../repository";
+import {privateCodexConfig} from "./private-config";
 import {companies,companyByTicker} from "./companies";
 import {ensurePortfolio,sourceState} from "./storage";
 import {nseFilings,quoteFor,digest,boundedText,rssUrl,parseNseRss,classify,safeAttachment} from "./sources";
@@ -74,6 +75,7 @@ async function collect(ticker:string){
   await evaluate(ticker,quote,fresh);
   // Analysis is queued only for users who explicitly connected a model account.
   const accounts=await db.prepare("SELECT owner FROM portfolio_accounts").all<{owner:string}>();
+  const personal=privateCodexConfig();if(personal&&!accounts.results.some(a=>a.owner===personal.owner))accounts.results.push({owner:personal.owner});
   for(const {owner} of accounts.results){const rules=await monitoringRules(owner);if(!rules.enabled||!rules.tickers.includes(ticker))continue;
     for(const f of fresh.filter(f=>f.attachmentUrl&&f.priority!=="routine"&&rules.categories.includes(f.category)&&Date.parse(f.publishedAt)>Date.now()-86400000).slice(0,5)){
       const now=new Date().toISOString();await db.prepare("INSERT OR IGNORE INTO portfolio_jobs(id,ticker,kind,status,created_at,available_at,payload) VALUES(?,?,'analyse','queued',?,?,?)").bind(`analyse:${await digest(owner)}:${f.id}`,ticker,now,now,JSON.stringify({owner,filingId:f.id})).run();

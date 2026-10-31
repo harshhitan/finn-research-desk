@@ -4,7 +4,7 @@ import ts from 'typescript';
 import {DatabaseSync} from 'node:sqlite';
 const root=new URL('../',import.meta.url),output=new URL('../.sites-runtime/portfolio-tests/',import.meta.url);
 await fs.mkdir(output,{recursive:true});
-const modules=['repository','finance','market-calculations','filing-content','portfolio/companies','portfolio/types','portfolio/storage','portfolio/sources','portfolio/monitor','portfolio/chatgpt-auth','portfolio/results','portfolio/analysis','portfolio/api'];
+const modules=['repository','finance','market-calculations','filing-content','portfolio/companies','portfolio/types','portfolio/storage','portfolio/sources','portfolio/monitor','portfolio/chatgpt-auth','portfolio/results','portfolio/analysis','portfolio/private-config','portfolio/private-worker','portfolio/api'];
 const moduleUrl=name=>new URL(name.replaceAll('/','-')+'.mjs',output);
 await fs.writeFile(new URL('env.mjs',output),'export const env=globalThis.__portfolioTestEnv;');
 for(const name of modules){
@@ -91,5 +91,35 @@ sqlite.prepare("UPDATE portfolio_accounts SET expires_at='2000-01-01' WHERE owne
 const stored=sqlite.prepare("SELECT credentials FROM portfolio_accounts WHERE owner='alice'").get().credentials;assert.equal((await auth.unseal(stored,'alice',config)).refreshToken,'rotated-refresh');
 await auth.disconnectSubscription('alice');assert.equal((await auth.subscriptionStatus('alice')).connected,false);await assert.rejects(()=>auth.subscriptionAccess('alice'));
 globalThis.fetch=originalFetch;
+// Personal VM jobs use a separate owner-bound queue; no subscription tokens
+// enter the Site. Exercise claims, duplicate submission, replay and validation.
+Object.assign(globalThis.__portfolioTestEnv,{FINN_PRIVATE_CODEX_OWNER:'alice',FINN_PRIVATE_CODEX_MODEL:'test-model',FINN_MONITOR_JOB_TOKEN:'job-token'});
+const privateConfig=await import(moduleUrl('portfolio/private-config'));
+const privateWorker=await import(moduleUrl('portfolio/private-worker'));
+sqlite.prepare('DELETE FROM portfolio_analysis WHERE owner=?').run('alice');
+sqlite.prepare('UPDATE provider_cache SET data=?,fetched_at=? WHERE key=?').run(JSON.stringify({contentHash:'hash',sourceUrl:'https://nsearchives.nseindia.com/test.pdf',pageCount:3,pages:quarterPassages.map(p=>({page:p.page,text:p.text}))}),new Date().toISOString(),'portfolio-pdf:'+fetched[0].id);
+assert.equal((await model.analyseFiling('alice',fetched[0].id)).queued,true);
+assert.equal((await model.analyseFiling('alice',fetched[0].id)).queued,true);
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM portfolio_private_jobs').get().count,1);
+await assert.rejects(()=>privateConfig.enqueuePrivateAnalysis('bob',fetched[0].id,'hash'));
+const workerRequest=(path,body={},token='job-token')=>new Request('https://finn.test/api/portfolio/private-worker/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Finn-Job-Token':token},body:JSON.stringify(body)});
+assert.equal((await handlePortfolio(workerRequest('claim',{},'bad'))).status,401);
+const claimResponse=await handlePortfolio(workerRequest('claim'));assert.equal(claimResponse.status,200);
+const claimed=(await claimResponse.json()).job;assert.ok(claimed.lease);assert.equal(claimed.filingId,fetched[0].id);
+assert.equal((await privateWorker.privateWorkerAction('claim',{})).job,null,'One model job runs at a time');
+assert.equal((await auth.subscriptionStatus('alice')).mode,'private_codex');assert.equal((await auth.subscriptionStatus('alice')).connected,true);assert.equal((await auth.subscriptionStatus('bob')).connected,false);
+await assert.rejects(()=>privateWorker.privateWorkerAction('complete',{id:claimed.id,lease:'wrong',analysis:quarterPayload}));
+assert.equal((await privateWorker.privateWorkerAction('complete',{id:claimed.id,lease:claimed.lease,analysis:quarterPayload})).accepted,true);
+await assert.rejects(()=>privateWorker.privateWorkerAction('complete',{id:claimed.id,lease:claimed.lease,analysis:quarterPayload}));
+assert.equal((await model.analyseFiling('alice',fetched[0].id)).model,'test-model','Validated analysis is reused');
+sqlite.prepare("UPDATE portfolio_private_worker SET last_seen='2000-01-01'").run();assert.equal((await auth.subscriptionStatus('alice')).connected,false);
+const content2={contentHash:'hash2',sourceUrl:'https://nsearchives.nseindia.com/test.pdf',pages:quarterPassages.map(p=>({page:p.page,text:p.text}))};
+sqlite.prepare('UPDATE provider_cache SET data=? WHERE key=?').run(JSON.stringify(content2),'portfolio-pdf:'+fetched[0].id);
+await model.analyseFiling('alice',fetched[0].id);const expired=(await privateWorker.privateWorkerAction('claim',{})).job;
+sqlite.prepare("UPDATE portfolio_private_jobs SET lease_until='2000-01-01' WHERE id=?").run(expired.id);
+const recovered=(await privateWorker.privateWorkerAction('claim',{})).job;assert.notEqual(recovered.lease,expired.lease);
+await assert.rejects(()=>privateWorker.privateWorkerAction('complete',{id:expired.id,lease:expired.lease,analysis:quarterPayload}));
+await assert.rejects(()=>privateWorker.privateWorkerAction('complete',{id:recovered.id,lease:recovered.lease,analysis:{...quarterPayload,claims:[{...quarterPayload.claims[0],quote:'Fabricated evidence from nowhere.'}]}}));
+assert.equal(sqlite.prepare('SELECT content_hash FROM portfolio_analysis WHERE owner=? AND filing_id=?').get('alice',fetched[0].id).content_hash,'hash','Rejected evidence cannot overwrite prior verified analysis');
 sqlite.close();
 console.log('PASS: 20 verified identities, exchange dates/identity, filing deduplication and amendments, durable retry and retained data, threshold/split guards, user isolation, origin/job authorization, disabled unapproved auth, credential encryption/tamper rejection, PKCE/JWT checks, model citation/number checks and stream completion.');

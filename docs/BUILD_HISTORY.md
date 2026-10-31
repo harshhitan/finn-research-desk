@@ -49,3 +49,7 @@ No credentials are embedded in authored source or this history. Hosting reposito
 - Mobile verification at 390 px: 20 company cards and no document-wide horizontal
   overflow. Published and scheduled-run verification is recorded separately.
 
+
+## Personal Codex worker — 31 October 2026
+
+The owner clarified that FINN is private and for personal use. Installed official Codex CLI 0.166.0 on the Azure VM; the owner completed device authentication. Verified `Logged in using ChatGPT`, an actual completed inference returning FINN_CODEX_CONNECTION_OK, and the client model catalog (gpt-6.1-sol default). Added an independent outbound Python/stdio worker and a lease-protected, owner-bound Site queue. The existing hosted OAuth adapter stays disabled. Protocol tests cover duplicate jobs, wrong-owner requests, service authentication, lease recovery/replay, fabricated source quotes, cache reuse and offline status. Results and presentation regressions pass. VM service-token installation and full production filing validation must be verified separately.

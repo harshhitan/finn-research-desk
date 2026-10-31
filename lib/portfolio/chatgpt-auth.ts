@@ -2,6 +2,7 @@
 // Hermes, reuse another application's client ID, or proxy a personal login.
 import {env} from "cloudflare:workers";
 import {database} from "../repository";
+import {privateCodexStatus} from "./private-config";
 import {boundedText,digest} from "./sources";
 export type AuthConfig={clientId:string;clientSecret?:string;redirectUri:string;scopes:string[];model:string;encryptionKey:string;tokenAuth:"none"|"client_secret_basic"};
 export function authConfig():AuthConfig|null{
@@ -50,7 +51,7 @@ async function tokenRequest(body:URLSearchParams,config:AuthConfig){
   if(!response.ok){await response.body?.cancel();throw new Error("ChatGPT authorization failed. Reconnect your account.");}
   const result=JSON.parse(await boundedText(response,200000));if(typeof result.access_token!=="string"||result.token_type?.toLowerCase()!=="bearer"||!Number.isFinite(result.expires_in)||result.expires_in<=0)throw new Error("Invalid authorization response");return result;
 }
-export async function subscriptionStatus(owner:string){const config=authConfig();const row=await database().prepare("SELECT updated_at,expires_at FROM portfolio_accounts WHERE owner=?").bind(owner).first<{updated_at:string;expires_at:string}>();return {configured:!!config,connected:!!config&&!!row,model:config?.model||null,connectedAt:row?.updated_at||null,reason:config?null:"Hosted ChatGPT-plan access needs FINN's approved client registration, authorized inference scopes and server-side configuration. Existing Site sign-in establishes identity only."};}
+export async function subscriptionStatus(owner:string){const personal=await privateCodexStatus(owner);if(personal)return personal;const config=authConfig();const row=await database().prepare("SELECT updated_at,expires_at FROM portfolio_accounts WHERE owner=?").bind(owner).first<{updated_at:string;expires_at:string}>();return {configured:!!config,connected:!!config&&!!row,model:config?.model||null,connectedAt:row?.updated_at||null,reason:config?null:"Hosted ChatGPT-plan access needs FINN's approved client registration, authorized inference scopes and server-side configuration. Existing Site sign-in establishes identity only."};}
 export async function startSubscription(owner:string,request:Request){
   const config=authConfig();if(!config)throw new Error("Hosted ChatGPT-plan authorization is not configured");if(new URL(request.url).origin!==new URL(config.redirectUri).origin)throw new Error("Authorization must start on the registered Site origin");
   const state=randomSecret(),nonce=randomSecret(),verifier=randomSecret(),stateHash=await digest(state);const transaction={nonce,verifier,redirectUri:config.redirectUri};
