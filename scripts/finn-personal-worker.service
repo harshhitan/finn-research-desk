@@ -1,0 +1,25 @@
+[Unit]
+Description=FINN personal Codex filing analysis
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=azureuser
+Group=azureuser
+WorkingDirectory=/home/azureuser/finn-personal/work
+ExecStart=/usr/bin/python3 /home/azureuser/finn-personal/worker.py --config /home/azureuser/finn-personal/config.json
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/azureuser/.codex /home/azureuser/finn-personal/work
+MemoryMax=512M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
