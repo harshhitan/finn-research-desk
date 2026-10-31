@@ -18,6 +18,9 @@ export async function handlePortfolio(request:Request){
     if(!identity&&!local&&!unattended)return json({error:"Sign in to FINN to access portfolio monitoring."},401);
     if(request.method!=="GET"&&!unattended){const origin=request.headers.get("origin");if(!origin||origin!==url.origin)return json({error:"A same-origin portfolio request is required."},403);}
     if(Number(request.headers.get("content-length"))>(worker?350000:16000))return json({error:"Request is too large"},413);
+    const jobKind=url.searchParams.get("kind");
+    if((path==="jobs/run"||path==="jobs/status")&&jobKind!==null&&jobKind!=="collect")return json({error:"Unsupported job kind."},400);
+    const collectionOnly=jobKind==="collect",kind=collectionOnly?"collect":null;
     await seedPortfolio();
     if(worker&&request.method==="POST"){
       if(!unattended||!privateCodexConfig())return json({error:"Private worker authorization is required."},403);
@@ -36,12 +39,12 @@ export async function handlePortfolio(request:Request){
     if(path==="jobs/tick"&&request.method==="POST")return json(await runJobs(2,analyseFiling));
     if(path==="jobs/run"&&request.method==="POST"){
       if(!unattended)return json({error:"Unattended collector authorization is required."},403);
-      await enqueueCollection();return json({...await runJobs(4,analyseFiling),remaining:(await database().prepare("SELECT COUNT(*) AS count FROM portfolio_jobs WHERE status IN ('queued','retry','running')").first<{count:number}>())?.count||0,checkedAt:new Date().toISOString()});
+      await enqueueCollection();return json({...await runJobs(4,collectionOnly?undefined:analyseFiling,{kind:kind||undefined}),jobKind:kind||"all",remaining:(await database().prepare("SELECT COUNT(*) AS count FROM portfolio_jobs WHERE status IN ('queued','retry','running') AND (? IS NULL OR kind=?)").bind(kind,kind).first<{count:number}>())?.count||0,checkedAt:new Date().toISOString()});
     }
     if(path==="jobs/status"&&request.method==="GET"){
       if(!unattended)return json({error:"Unattended collector authorization is required."},403);
-      const db=database();const [quotes,filings,errors,jobs,lock,active]=await Promise.all([db.prepare("SELECT COUNT(DISTINCT ticker) AS count FROM portfolio_prices").first<{count:number}>(),db.prepare("SELECT COUNT(*) AS count FROM portfolio_filings").first<{count:number}>(),db.prepare("SELECT ticker,source,error FROM portfolio_sources WHERE error IS NOT NULL").all(),db.prepare("SELECT status,COUNT(*) AS count FROM portfolio_jobs GROUP BY status").all(),db.prepare("SELECT expires_at FROM portfolio_locks WHERE name='collector'").first(),db.prepare("SELECT id,ticker,kind,status,attempts,available_at,lease_until,error FROM portfolio_jobs WHERE status IN ('running','retry') ORDER BY created_at LIMIT 20").all()]);
-      return json({quotes:quotes?.count||0,filings:filings?.count||0,sourceErrors:errors.results,jobs:jobs.results,collectorLock:lock,activeJobs:active.results,checkedAt:new Date().toISOString()});
+      const db=database();const [quotes,filings,errors,jobs,lock,active]=await Promise.all([db.prepare("SELECT COUNT(DISTINCT ticker) AS count FROM portfolio_prices").first<{count:number}>(),db.prepare("SELECT COUNT(*) AS count FROM portfolio_filings").first<{count:number}>(),db.prepare("SELECT ticker,source,error FROM portfolio_sources WHERE error IS NOT NULL").all(),db.prepare("SELECT status,COUNT(*) AS count FROM portfolio_jobs WHERE (? IS NULL OR kind=?) GROUP BY status").bind(kind,kind).all(),db.prepare("SELECT expires_at FROM portfolio_locks WHERE name='collector'").first(),db.prepare("SELECT id,ticker,kind,status,attempts,available_at,lease_until,error FROM portfolio_jobs WHERE status IN ('running','retry') AND (? IS NULL OR kind=?) ORDER BY created_at LIMIT 20").bind(kind,kind).all()]);
+      return json({jobKind:kind||"all",quotes:quotes?.count||0,filings:filings?.count||0,sourceErrors:errors.results,jobs:jobs.results,collectorLock:lock,activeJobs:active.results,checkedAt:new Date().toISOString()});
     }
     if(path==="jobs"&&request.method==="GET"){const rows=await database().prepare("SELECT ticker,kind,status,attempts,created_at,finished_at,error FROM portfolio_jobs WHERE kind='collect' ORDER BY created_at DESC LIMIT 40").all();return json(rows.results);}
     const document=path.match(/^filings\/([a-zA-Z0-9-]+)\/content$/);

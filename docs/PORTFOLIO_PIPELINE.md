@@ -108,9 +108,35 @@ sorts important items first and collapses routine items. Rules include price,
 volume, categories, priority and company selection. Alerts are persisted in-app,
 not email or device push. New rules do not retroactively manufacture filing alerts.
 
-## Unattended writer
+## Unattended writer — ordinary VM timer
 
-An enabled hourly Site schedule is linked as `FINN portfolio monitoring`
+The former ChatGPT cloud task `FINN portfolio monitoring`
+(`Automation_ad78e94f63288191846884801456066c`) is paused, verified on 1 November
+2026. Leave it paused. Its earlier run evidence below is historical.
+
+Collection uses `finn-collector.timer` on the Azure VM, hourly around :35 IST,
+with a Python standard-library runner and no AI agent or ChatGPT login. Operational
+source, tests and rollback instructions are in the workspace's `ops/` directory.
+The separate Codex interpretation worker remains stopped/disabled and signed out.
+
+The timer calls `POST /api/portfolio/jobs/run?kind=collect`, then
+`GET /api/portfolio/jobs/status?kind=collect`. Both retain the existing service
+authorization. The selector limits job claims, expired-lease recovery, pending
+counts and status to collection jobs. It does not claim optional `analyse` jobs or
+call a model. Existing interactive/default mixed processing remains available.
+Collection may still enqueue optional analysis work for the existing model path;
+the timer does not execute that work. Stored analyses and pending jobs are retained.
+
+The runner preflights `jobKind: collect` before writing so an older deployment
+cannot silently ignore the selector. It refuses redirects, bounds calls/time and
+retries, prevents overlapping local invocations and records a protected status
+file. systemd adds bounded run retries and one catch-up run after VM downtime.
+Collection requires the VM to be running; Site credential rotation requires
+updating the existing protected service config.
+
+### Historical cloud scheduler verification
+
+An hourly Site schedule was linked as `FINN portfolio monitoring`
 (`Automation_ad78e94f63288191846884801456066c`, Asia/Calcutta). The scheduling
 service rejected a 30-minute interval because it allows at most one run per hour.
 Schedule creation proves configuration, not a completed cloud execution.

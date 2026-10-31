@@ -129,5 +129,38 @@ assert.equal(sqlite.prepare('SELECT content_hash FROM portfolio_analysis WHERE o
 sqlite.prepare("UPDATE portfolio_private_jobs SET status='failed',available_at='2999-01-01' WHERE id=?").run(recovered.id);
 await privateConfig.enqueuePrivateAnalysis('alice',fetched[0].id,'hash2');
 assert.ok((await privateWorker.privateWorkerAction('claim',{})).job,'An owner-requested retry is immediately eligible instead of inheriting an obsolete backoff');
+// A scheduled collection run must leave optional analysis jobs untouched, even
+// when an older analysis job is at the front of the queue.
+sqlite.exec('SAVEPOINT collection_scheduler');
+sqlite.prepare('DELETE FROM portfolio_jobs').run();
+const jobInsert=sqlite.prepare("INSERT INTO portfolio_jobs(id,ticker,kind,status,created_at,available_at,payload) VALUES(?,?,?,'queued',?,?,?)");
+jobInsert.run('analysis-first','RELIANCE','analyse','2000-01-01','2000-01-01',JSON.stringify({owner:'alice',filingId:fetched[0].id}));
+jobInsert.run('collection-next','RELIANCE','collect','2000-01-02','2000-01-01',null);
+let modelCalls=0;
+globalThis.fetch=async()=>{throw new Error('test source unavailable');};
+assert.equal((await monitor.runJobs(1,async()=>{modelCalls++;},{kind:'collect'})).processed,1);
+assert.equal(modelCalls,0);
+assert.equal(sqlite.prepare("SELECT attempts FROM portfolio_jobs WHERE id='analysis-first'").get().attempts,0);
+assert.equal(sqlite.prepare("SELECT status FROM portfolio_jobs WHERE id='collection-next'").get().status,'retry');
+globalThis.fetch=originalFetch;
+const storage=await import(moduleUrl('portfolio/storage'));
+for(const company of companies)await storage.sourceState(company.ticker,'NSE announcements',true,'Scheduler test');
+const scheduledRequest=(path,method='GET',token='job-token')=>new Request('https://finn.test/api/portfolio/'+path,{method,headers:{'X-Finn-Job-Token':token}});
+assert.equal((await handlePortfolio(scheduledRequest('jobs/run?kind=collect','POST','bad'))).status,401);
+assert.equal((await handlePortfolio(scheduledRequest('jobs/status?kind=unknown'))).status,400);
+const collectionStatus=await (await handlePortfolio(scheduledRequest('jobs/status?kind=collect'))).json();
+assert.equal(collectionStatus.jobKind,'collect');
+assert.deepEqual(collectionStatus.jobs,[{status:'retry',count:1}]);
+assert.equal(collectionStatus.activeJobs.length,1);
+assert.equal(collectionStatus.activeJobs[0].kind,'collect');
+const scheduledRun=await (await handlePortfolio(scheduledRequest('jobs/run?kind=collect','POST'))).json();
+assert.equal(scheduledRun.jobKind,'collect');assert.equal(scheduledRun.processed,0);assert.equal(scheduledRun.remaining,1);
+sqlite.prepare("UPDATE portfolio_jobs SET status='done' WHERE id='collection-next'").run();
+const finishedCollection=await (await handlePortfolio(scheduledRequest('jobs/run?kind=collect','POST'))).json();
+assert.equal(finishedCollection.remaining,0,'Pending analysis must not keep the collector running');
+assert.equal(sqlite.prepare("SELECT attempts FROM portfolio_jobs WHERE id='analysis-first'").get().attempts,0);
+assert.equal((await monitor.runJobs(1,async()=>{modelCalls++;})).processed,1);
+assert.equal(modelCalls,1,'The existing mixed/manual processor still supports analysis');
+sqlite.exec('ROLLBACK TO collection_scheduler; RELEASE collection_scheduler');
 sqlite.close();
 console.log('PASS: 20 verified identities, exchange dates/identity, filing deduplication and amendments, durable retry and retained data, threshold/split guards, user isolation, origin/job authorization, disabled unapproved auth, credential encryption/tamper rejection, PKCE/JWT checks, model citation/number checks and stream completion.');
