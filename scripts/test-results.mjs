@@ -14,6 +14,12 @@ for(const date of ['30 September 2026','September 30, 2026','30-Sep-2026','30.09
 assert.equal(supportsDate('30 September 2025','2026-09-30'),false);assert.equal(supportsDate('30.09.26','2026-09-30'),false);
 const evidence='Example Limited. Consolidated, INR crore. Three months ended 30 September 2026. Revenue from operations 120.';
 const context={periodEnd:'2026-09-30',durationMonths:3,entity:'Example Limited',scope:'consolidated',definition:'Revenue from operations',passageId:'p1-0',quote:evidence};
+for(const date of ['30TH SEPTEMBER, 2026','September 30th, 2026','30th Sept 2026'])assert.equal(supportsDate(date,'2026-09-30'),true);
+assert.equal(supportsDate('31st December 2026','2026-12-31'),true);
+assert.equal(supportsDate('30TH SEPTEMBER, 2026','2025-09-30'),false);
+assert.equal(supportsDate('30st September 2026','2026-09-30'),false);
+const ordinalEvidence='Example Limited. Consolidated INR crore. Quarter ended 30TH SEPTEMBER, 2026. Revenue from operations 120.';
+assert.equal(validateMetricContext({...context,quote:ordinalEvidence},metric('Revenue',120,'2026-09-30'),[{id:'p1-0',page:1,text:ordinalEvidence}]).periodEnd,'2026-09-30');
 assert.equal(validateMetricContext(context,metric('Revenue',120,'2026-09-30'),[{id:'p1-0',page:1,text:evidence}]).periodEnd,'2026-09-30');
 for(const change of [{periodEnd:'2025-09-30'},{scope:'standalone'},{durationMonths:6},{definition:'Total income'},{quote:evidence+' Invented sentence.'}])assert.throws(()=>validateMetricContext({...context,...change},metric('Revenue',120,'2026-09-30'),[{id:'p1-0',page:1,text:evidence}]));
 const absent=buildResultsComparison(filing,[report([metric('Revenue',120,'2026-09-30')])]);assert.equal(absent.status,'partial');assert.equal(absent.groups[0].rows[0].qoq.status,'unavailable');assert.equal(absent.groups[0].rows[1].current,null);

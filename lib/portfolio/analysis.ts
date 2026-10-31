@@ -29,7 +29,9 @@ export function validateAnalysis(value:any,passages:Passage[],model:string,hash:
   // text outside the evidence contract. Interpretation is labelled in the UI.
   if(!value.claims.some((c:any)=>c.text===value.summary)||!value.claims.some((c:any)=>c.text===value.whyItMatters))throw new Error("Summary and significance need supporting passages");
   for(const m of value.metrics){
-    if(!["Revenue","EBITDA","PBT","PAT"].includes(m.name)||!Number.isFinite(m.value)||!["INR crore","INR lakh","INR million","INR billion"].includes(m.unit)||typeof m.period!=="string"||m.period.length>80||typeof m.basis!=="string"||m.basis.length>120)throw new Error("Invalid reported financial metric");
+    // Preserve entity names, restatement notes and accounting adjustments. A
+    // compact label limit must not reject a correctly cited financial figure.
+    if(!["Revenue","EBITDA","PBT","PAT"].includes(m.name)||!Number.isFinite(m.value)||!["INR crore","INR lakh","INR million","INR billion"].includes(m.unit)||typeof m.period!=="string"||m.period.length>80||typeof m.basis!=="string"||m.basis.length>512)throw new Error("Invalid reported financial metric");
     validate({...m,text:m.name});
     const numbers=normal(m.quote).replace(/,/g,"").replace(/\((\d+(?:\.\d+)?)\)/g,"-$1").replace(/[−–]/g,"-").match(/-?\d+(?:\.\d+)?/g)||[];
     if(!numbers.some(n=>Number(n)===m.value))throw new Error("Extracted financial number is absent from its source quote");

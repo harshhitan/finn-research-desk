@@ -18,7 +18,9 @@ export function supportsDate(quote:string,date:string){
   const [year,month,day]=date.split("-").map(Number),name=months[month-1];
   const monthPattern=`(?:${name}|${name.slice(0,3)}${month===9?"t?":""})`;
   const gap="[\\s,./-]*",d=`0?${day}`,m=`0?${month}`;
-  return new RegExp(`(?:\\b${year}${gap}${m}${gap}${d}\\b|\\b${d}${gap}${m}${gap}${year}\\b|\\b${d}${gap}${monthPattern}${gap}${year}\\b|\\b${monthPattern}${gap}${d}${gap}${year}\\b)`,"i").test(quote);
+  const suffix=day%100>=11&&day%100<=13?"th":({1:"st",2:"nd",3:"rd"} as Record<number,string>)[day%10]||"th";
+  const namedDay=`${d}(?:${suffix})?`;
+  return new RegExp(`(?:\\b${year}${gap}${m}${gap}${d}\\b|\\b${d}${gap}${m}${gap}${year}\\b|\\b${namedDay}${gap}${monthPattern}${gap}${year}\\b|\\b${monthPattern}${gap}${namedDay}${gap}${year}\\b)`,"i").test(quote);
 }
 
 export function validateReportPeriod(context:any,passages:Passage[]):ReportPeriod|null {

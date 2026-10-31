@@ -127,8 +127,18 @@ def api(config, path, body):
         raise ValueError("FINN request exceeded the size limit")
     request = urllib.request.Request(config["url"].rstrip("/") + "/api/portfolio/private-worker/" + path,
         data=payload, headers={"Content-Type": "application/json", "OAI-Sites-Authorization": "Bearer " + config["serviceToken"], "X-Finn-Job-Token": config["serviceToken"]}, method="POST")
-    with urllib.request.build_opener(NoRedirect).open(request, timeout=90) as response:
-        return json.load(response)
+    try:
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=90) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        reason="Request rejected"
+        try:
+            message=json.loads(error.read(4096)).get("error", "")
+            if isinstance(message,str) and message.startswith(("Model ","Invalid reported", "Extracted ","Reported financial", "Summary ", "This document", "Private worker", "Sign in")):
+                reason=message[:240]
+        except (ValueError,AttributeError):
+            pass
+        raise RuntimeError("FINN " + path + " HTTP " + str(error.code) + ": " + reason) from None
 
 
 def main():
@@ -155,6 +165,7 @@ def main():
         raise ValueError("Worker configuration must target the selected private FINN Site")
     while True:
         job = None
+        value = None
         try:
             result = api(config, "claim", {})
             job = result.get("job")
@@ -169,6 +180,12 @@ def main():
             elif args.once:
                 print(json.dumps({"status": "idle"}), flush=True)
         except Exception as error:
+            if job and value is not None:
+                try:
+                    with os.fdopen(os.open("last-rejected-analysis.json",os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600),"w") as record:
+                        json.dump({"filingId":job["filingId"],"input":job["input"],"analysis":value},record)
+                except OSError:
+                    pass
             # Provider bodies/credentials never enter logs or Site error records.
             print(json.dumps({"status": "error", "errorType": type(error).__name__, "stage": str(error) if isinstance(error, RuntimeError) else "Worker operation failed"}), flush=True)
             if job:
