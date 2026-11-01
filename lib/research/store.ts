@@ -18,17 +18,30 @@ export async function companies(){
   const result=await database().prepare(`SELECT c.*,
     (SELECT COUNT(*) FROM research_documents d WHERE d.ticker=c.ticker AND d.active_version IS NOT NULL AND d.type='annual_report') AS annuals,
     (SELECT COUNT(*) FROM research_documents d WHERE d.ticker=c.ticker AND d.active_version IS NOT NULL AND d.type='earnings_call') AS transcripts,
+    (SELECT json_group_array(json_object('type',d.type,'period',d.period,'active_version',d.active_version)) FROM research_documents d WHERE d.ticker=c.ticker AND d.active_version IS NOT NULL) AS indexed_periods,
     (SELECT COUNT(*) FROM research_chunks p JOIN research_documents d ON d.id=p.document_id AND d.active_version=p.version_id WHERE p.ticker=c.ticker) AS chunks
     FROM research_companies c ORDER BY CASE c.ticker WHEN 'RELIANCE' THEN 0 ELSE 1 END,c.name`).all<any>();
-  return result.results.map(c=>({...c,sources:parse(c.sources,[])})) as ResearchCompany[];
+  return result.results.map(c=>{const {indexed_periods,...record}=c;const fresh=coverageFreshness(parse(indexed_periods,[]));return {...record,status:c.status==='ready'&&!fresh.current?'partial':c.status,sources:parse(c.sources,[])};}) as ResearchCompany[];
 }
 export async function documents(ticker:string){
   return (await database().prepare("SELECT d.*,v.page_count,v.readable_pages,v.chunk_count FROM research_documents d LEFT JOIN research_document_versions v ON v.id=d.active_version WHERE d.ticker=? AND d.status!='superseded' ORDER BY d.period DESC,d.type,d.title").bind(ticker).all<ResearchDocument>()).results;
 }
+export function coverageFreshness(docs:Pick<ResearchDocument,'period'|'type'|'active_version'>[],asOf=new Date()){
+  const year=asOf.getUTCFullYear(),month=asOf.getUTCMonth(),fiscalYear=year+(month>=3?1:0),quarter=Math.floor(((month+9)%12)/3)+1,currentQuarter=fiscalYear*4+quarter;
+  const indexed=docs.filter(d=>d.active_version),annuals=[...new Set(indexed.filter(d=>d.type==='annual_report'&&/^FY20\d{2}$/.test(d.period)).map(d=>Number(d.period.slice(2))))].sort((a,b)=>b-a);
+  const calls=indexed.filter(d=>d.type==='earnings_call'&&/^Q[1-4] FY20\d{2}$/.test(d.period)).map(d=>({period:d.period,rank:Number(d.period.slice(5))*4+Number(d.period[1])})).sort((a,b)=>b.rank-a.rank);
+  const recent=new Set(calls.filter(c=>c.rank>=currentQuarter-12&&c.rank<currentQuarter).map(c=>c.period));
+  // Allow annual-report publication through August. Keep older evidence in the
+  // library, while ensuring that six very old calls cannot imply current readiness.
+  const annualCurrent=annuals.length>=2&&annuals[0]>=(month>=8?year:year-1)&&annuals[0]<=(month>=3?year:year-1)&&annuals[1]===annuals[0]-1;
+  const callsCurrent=recent.size>=6&&!!calls.length&&calls[0].rank>=currentQuarter-4&&calls[0].rank<currentQuarter;
+  return {current:annualCurrent&&callsCurrent,annualCurrent,recentCallPeriods:recent.size,latestAnnualPeriod:annuals.length?'FY'+annuals[0]:null,latestCallPeriod:calls[0]?.period||null};
+}
 export async function coverage(ticker:string){
   const c=await company(ticker);if(!c)throw new Error("Unknown research company");
   const [docs,jobs]=await Promise.all([documents(ticker),database().prepare("SELECT id,kind,status,stage,progress,error,created_at,updated_at FROM research_jobs WHERE ticker=? ORDER BY created_at DESC LIMIT 6").bind(ticker).all<any>()]);
-  return {company:c,documents:docs,jobs:jobs.results.map(j=>({...j,progress:parse(j.progress,{})})),counts:{annuals:docs.filter(d=>d.type==="annual_report"&&d.active_version).length,transcripts:docs.filter(d=>d.type==="earnings_call"&&d.active_version).length,chunks:docs.reduce((sum,d)=>sum+(d.chunk_count||0),0)},target:{annuals:2,transcripts:6}};
+  const freshness=coverageFreshness(docs),currentCompany=c.status==='ready'&&!freshness.current?{...c,status:'partial',error:'Current-period coverage is incomplete or stale; inspect the latest annual years and recent quarterly calls.'}:c;
+  return {company:currentCompany,documents:docs,jobs:jobs.results.map(j=>({...j,progress:parse(j.progress,{})})),counts:{annuals:docs.filter(d=>d.type==="annual_report"&&d.active_version).length,transcripts:docs.filter(d=>d.type==="earnings_call"&&d.active_version).length,chunks:docs.reduce((sum,d)=>sum+(d.chunk_count||0),0)},freshness,target:{annuals:2,transcripts:6}};
 }
 export async function enqueuePreparation(ticker:string,owner:string,priority=10){
   const db=database(),prior=await db.prepare("SELECT id,status FROM research_jobs WHERE ticker=? AND kind='prepare' AND status IN ('queued','running','retry') ORDER BY created_at DESC LIMIT 1").bind(ticker).first<{id:string;status:string}>();
@@ -114,10 +127,12 @@ export async function synchronizeCompany(ticker:string,error:string|null=null){
   const db=database(),docs=await documents(ticker),indexed=docs.filter(d=>d.active_version);
   const annuals=new Set(indexed.filter(d=>d.type==='annual_report'&&/^FY20\d{2}$/.test(d.period)).map(d=>d.period)).size;
   const calls=new Set(indexed.filter(d=>d.type==='earnings_call'&&/^Q[1-4] FY20\d{2}$/.test(d.period)).map(d=>d.period)).size;
-  const ready=annuals>=2&&calls>=6&&indexed.every(d=>d.status==='ready'&&(d.type==='annual_report'?/^FY20\d{2}$/:/^Q[1-4] FY20\d{2}$/).test(d.period));
+  const freshness=coverageFreshness(indexed),verified=indexed.every(d=>(d.type==='annual_report'?/^FY20\d{2}$/:/^Q[1-4] FY20\d{2}$/).test(d.period));
+  const ready=annuals>=2&&calls>=6&&freshness.current&&verified&&indexed.every(d=>d.status==='ready');
   const active=await db.prepare("SELECT id FROM research_jobs WHERE ticker=? AND status IN ('queued','running','retry') LIMIT 1").bind(ticker).first();
   const status=ready?'ready':indexed.length?'partial':active?'preparing':'failed';
-  await db.prepare('UPDATE research_companies SET status=?,error=?,updated_at=? WHERE ticker=?').bind(status,error||(!ready?'Coverage is incomplete or some pages have no usable text; inspect sources and diagnostics.':null),stamp(),ticker).run();
+  const reason=!freshness.current?'Current-period coverage is incomplete or stale; inspect the latest annual years and recent quarterly calls.':!verified?'Some indexed source periods are unverified; inspect sources and diagnostics.':'Some pages have no usable text; inspect source coverage and diagnostics.';
+  await db.prepare('UPDATE research_companies SET status=?,error=?,updated_at=? WHERE ticker=?').bind(status,ready?error:reason,stamp(),ticker).run();
   return {status,indexed:indexed.length};
 }
 export async function workerStatus(){

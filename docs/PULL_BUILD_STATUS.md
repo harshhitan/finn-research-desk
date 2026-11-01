@@ -54,7 +54,7 @@ explicit retry and never repeats automatically.
 Research protocol tests cover authorization, leases/replay, original storage,
 atomic publication and metadata, annual alias retirement, historical PDFs,
 issuer/type/year filtering, retrieval ranking/diversity, model-off evidence,
-answer/citation validation, caching and directory fallback. Sixteen Linux worker
+answer/citation validation, caching and directory fallback. Twenty-two Linux worker
 tests cover URL, memory, document, period, conversion, disabled-model guards and
 private failure diagnostics, staged indexing recovery and serial question
 checkpoints after conversion. Staged uploads resume only a contiguous ordinal
@@ -166,6 +166,21 @@ returned a supported consolidated segment/category answer and correctly
 separated the discontinued Ice Cream business. Five companies now have accepted
 live answers (Reliance, Coforge, Infosys, TCS and HUL); this does not replace the
 source-review suite or the full completion audit.
+
+The final NTPC check exposed stale quarterly coverage despite a numeric target
+being met. Discovery policy `primary-links-3` removes the count-based early exit,
+orders embedded fiscal years and compact filename dates without neighbouring
+table-year leakage, follows two observed financial-year archive values, and uses
+row context to distinguish presentations/notices from transcripts. The crawler
+remains limited to sixteen pages. Research-2.7 also serves saved questions between
+discovery requests, never concurrently with conversion.
+
+Readiness checks two consecutive latest annual years (with publication time
+through August), six calls from the last twelve completed fiscal quarters and a
+call in the last four completed quarters. Older valid periods stay searchable.
+Readiness degrades on read as evidence ages; no model scheduling is required.
+The source panel exposes latest periods and recent call counts. These freshness
+and live NTPC corrections still require publication and real refresh verification.
 
 The 26-case review excluding NTPC returned no scope violations and empty results
 for all three absent-2099 cases. Manual review found a broad HUL-category

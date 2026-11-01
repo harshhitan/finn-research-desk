@@ -92,7 +92,8 @@ export async function researchWorkerAction(action:string,body:any){
     for(const q of candidates.results)await refreshQuestion(q.id,owner);
     const lease=crypto.randomUUID();
     const q=await db.prepare("UPDATE research_questions SET status='running',lease=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=(SELECT id FROM research_questions WHERE owner=? AND status='queued' AND attempts=0 ORDER BY created_at LIMIT 1) AND status='queued' AND NOT EXISTS(SELECT 1 FROM research_questions WHERE status='running') RETURNING *").bind(lease,new Date(Date.now()+240000).toISOString(),now,owner).first<any>();
-    return {question:q?{id:q.id,lease:q.lease,model:environment().FINN_PRIVATE_CODEX_MODEL,instructions:researchInstructions,outputSchema:researchAnswerSchema,input:{company:await company(q.ticker),question:q.question,filters:parse(q.filters,{}),coverage:await coverage(q.ticker),passages:parse(q.context,[])}}:null};
+    if(!q)return {question:null};const context=await coverage(q.ticker);
+    return {question:{id:q.id,lease:q.lease,model:environment().FINN_PRIVATE_CODEX_MODEL,instructions:researchInstructions,outputSchema:researchAnswerSchema,input:{company:context.company,question:q.question,filters:parse(q.filters,{}),coverage:context,passages:parse(q.context,[])}}};
   }
   if(action==="question/complete"||action==="question/failed"){
     const q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND owner=? AND status='running' AND lease=? AND lease_until>?").bind(String(body.id||""),owner,String(body.lease||""),now).first<any>();

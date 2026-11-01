@@ -6,6 +6,7 @@ from ingestion, and require both an explicit setting and a current Codex login.
 import argparse
 import contextlib
 import csv
+from datetime import date
 import hashlib
 import http.client
 from html.parser import HTMLParser
@@ -30,10 +31,10 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.6'
+VERSION = 'research-2.7'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-2'
-DISCOVERY_POLICY = 'primary-links-2'
+DISCOVERY_POLICY = 'primary-links-3'
 MAX_PDF = 64 * 1024 * 1024
 MAX_HTML = 3 * 1024 * 1024
 USER_AGENT = 'Mozilla/5.0 (compatible; FINNResearch/1.0; primary-document research)'
@@ -94,21 +95,44 @@ class Links(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.base, self.links, self.current, self.context = base, [], None, ''
         self.section, self.heading_tag, self.heading_text = '', None, ''
+        self.year_select,self.year_option=None,None
+        self.row_context=None
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
+        if tag=='tr':self.row_context=''
+        if tag=='select' and re.fullmatch(r'[A-Za-z0-9_]{1,80}',attrs.get('name','')) and 'year' in attrs['name'].lower():
+            self.year_select={'name':attrs['name'],'options':[]}
+        if tag=='option' and self.year_select is not None:
+            self.year_option={'value':attrs.get('value',''),'label':'','selected':'selected' in attrs}
         if tag in ('h1','h2','h3','h4'):
             self.heading_tag, self.heading_text = tag, ''
         if tag == 'a' and attrs.get('href'):
             target = urllib.parse.urljoin(self.base, attrs['href'])
             target = urllib.parse.quote(target, safe=":/?#[]@!$&'()*+,;=%-._~")
-            self.current = [target, '', self.section + ' ' + self.context[-180:]]
+            context=('Row: '+self.row_context) if self.row_context is not None else self.section+' '+self.context[-180:]
+            self.current = [target, '', context]
         elif any(attrs.get(key) for key in ('data-href','data-url','value')):
             target = next((attrs[key] for key in ('data-href','data-url','value') if attrs.get(key)), '')
             if '.pdf' in target.lower():
                 self.links.append((urllib.parse.urljoin(self.base,target),attrs.get('title','') or attrs.get('aria-label',''),self.section))
 
     def handle_endtag(self, tag):
+        if tag=='tr':self.row_context=None
+        if tag=='option' and self.year_select is not None and self.year_option is not None:
+            self.year_select['options'].append(self.year_option);self.year_option=None
+        if tag=='select' and self.year_select is not None:
+            options=[]
+            for option in self.year_select['options']:
+                fiscal=re.fullmatch(r'\s*(20\d{2})\s*[-–/]\s*(?:20)?(\d{2})\s*',option['label'])
+                if fiscal and int(fiscal[1])+1==2000+int(fiscal[2]) and not option['selected'] and re.fullmatch(r'[A-Za-z0-9_-]{1,80}',option['value']):
+                    options.append((2000+int(fiscal[2]),option))
+            base=urllib.parse.urlsplit(self.base)
+            for _,option in sorted(options,key=lambda item:item[0],reverse=True)[:2]:
+                query=dict(urllib.parse.parse_qsl(base.query,keep_blank_values=True));query[self.year_select['name']]=option['value']
+                target=urllib.parse.urlunsplit((base.scheme,base.netloc,base.path,urllib.parse.urlencode(query),''))
+                self.links.append((target,'Financial year '+option['label'],'Financial year archive'))
+            self.year_select=None
         if tag == self.heading_tag:
             self.section, self.heading_tag = self.heading_text.strip(), None
         if tag == 'a' and self.current:
@@ -118,6 +142,8 @@ class Links(HTMLParser):
     def handle_data(self, data):
         value = re.sub(r'\s+', ' ', data).strip()
         if value:
+            if self.row_context is not None:self.row_context=(self.row_context+' '+value)[-500:]
+            if self.year_option is not None:self.year_option['label']+=' '+value
             if self.heading_tag:
                 self.heading_text += ' ' + value
             self.context = (self.context + ' ' + value)[-350:]
@@ -149,9 +175,11 @@ def document_kind(url, label='', context=''):
         return None
     if re.search(r'\bppt\b|presentation|fact.?sheet|ai.?summary|annual.?general.?meeting|\bagm\b', value):
         return None
+    if not re.search(r'transcript|transctipt',value) and (re.search(r'(?:^|[^a-z])ofs(?:[^a-z]|$)',value) or re.search(r'^Row:\s*(?:Presentation|Key\s*Performance|Intimation|Audio|Video)',context,re.I)):
+        return None
     if re.search(r'annual\s+analysts|institutional\s+investors\s+meet|audio.?video|audio\s+recording', value):
         return None
-    if re.search(r'transcript|concall|conference.?call|earnings.?call', value):
+    if re.search(r'transcript|transctipt|concall|conference.?call|earnings.?call', value):
         return 'earnings_call'
     if re.search(r'quarterly[-_/ ]results|form20f|additional[-_ ]information', value):
         return None
@@ -159,9 +187,9 @@ def document_kind(url, label='', context=''):
         return 'annual_report'
     # A generic "Download" link needs its surrounding source section.
     combined = context.lower()
-    if label.strip() and not re.match(r'^(download|pdf|click here)(\s|\(|$)',label.strip(),re.I):
+    if label.strip() and not re.match(r'^(download|view(?:\s*/\s*download)?|pdf|click here|Q[1-4])(?:\s|\(|$)',label.strip(),re.I):
         return None
-    if re.search(r'concall|transcript', combined):
+    if re.search(r'concall|transcript|conference.?call|earnings.?call', combined):
         return 'earnings_call'
     if re.search(r'annual report|integrated report', combined):
         return 'annual_report'
@@ -169,12 +197,14 @@ def document_kind(url, label='', context=''):
 
 
 def document_period(url, label='', context=''):
-    for source in (label,url,context):
+    # Table-neighbour text is not a reliable year/quarter label. Use the link's
+    # own label or filename for ordering, and verify the PDF before indexing.
+    for source in (label,url):
         value = urllib.parse.unquote(source)
         match = re.search(r'(20\d{2})\s*[-–/]\s*(?:20)?(\d{2})', value)
         year = (match[1] + '-' + match[2]) if match else None
         if not year:
-            match = re.search(r'fy\s*[-_\'’]?\s*(20\d{2}|\d{2})\b',value,re.I)
+            match = re.search(r'fy\s*[-_\'’]?\s*(20\d{2}|\d{2})(?!\d)',value,re.I)
             year = (match[1] if len(match[1])==4 else '20'+match[1]) if match else None
         if not year:
             match = re.search(r'\b(?:FY\s*)?(20\d{2})\b', value, re.I)
@@ -183,14 +213,21 @@ def document_period(url, label='', context=''):
             match = re.search(r'\bar[-_ ](\d{2})\b', value, re.I)
             year = (('19' if int(match[1])>=70 else '20')+match[1]) if match else None
         if year:
-            quarter = re.search(r'\bQ([1-4])\b', value, re.I)
+            quarter = re.search(r'Q([1-4])(?:\b|(?=FY)|(?=20\d{2}))', value, re.I)
             return ((quarter[0].upper()+' ') if quarter else '')+year
     return 'Period unverified'
 
 
 def date_hint(value):
+    value=urllib.parse.unquote(value)
+    for match in re.finditer(r'(?<!\d)(\d{2})(\d{2})(20\d{2})(?!\d)',value):
+        try:parsed=date(int(match[3]),int(match[2]),int(match[1]));return parsed.year*12+parsed.month
+        except ValueError:pass
+    for match in re.finditer(r'(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)',value):
+        try:parsed=date(int(match[1]),int(match[2]),int(match[3]));return parsed.year*12+parsed.month
+        except ValueError:pass
     months = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
-    found = list(re.finditer(r'\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(?:\d{1,2},?\s+)?(20\d{2})\b',urllib.parse.unquote(value),re.I))
+    found = list(re.finditer(r'\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(?:\d{1,2},?\s+)?(20\d{2})\b',value,re.I))
     return int(found[-1].group(2))*12+months[found[-1].group(1)[:3].lower()] if found else 0
 
 
@@ -243,7 +280,7 @@ def verified_period(kind, content):
 def discovery_score(document):
     value = urllib.parse.unquote(document['url'] + ' ' + document['title'] + ' ' + document.get('period',''))
     years = [int(y) for y in re.findall(r'20\d{2}', value)]
-    quarter = re.search(r'\bq([1-4])', value, re.I)
+    quarter = re.search(r'q([1-4])(?:\b|(?=fy)|(?=20\d{2}))', value, re.I)
     fiscal = re.search(r'(20\d{2})\s*[-/]\s*(?:20)?(\d{2})', value)
     ending = int('20' + fiscal.group(2)) if fiscal else max(years, default=2000)
     q = int(quarter.group(1)) if quarter else 4
@@ -255,12 +292,12 @@ def discovery_score(document):
         date=ending*12+3
     else:
         urlvalue=urllib.parse.unquote(document['url'])
-        explicit=re.search(r'fy\s*[-_]?\s*(20\d{2}|\d{2})\b',urlvalue,re.I)
+        explicit=re.search(r'fy\s*[-_]?\s*(20\d{2}|\d{2})(?!\d)',urlvalue,re.I)
         if explicit:
             ending=int(explicit[1]) if len(explicit[1])==4 else 2000+int(explicit[1])
             date=(ending-(1 if q<4 else 0))*12+{1:6,2:9,3:12,4:3}[q]
         else:
-            date = document.get('sortDate') or date_hint(value) or ((ending-(1 if q<4 else 0))*12+{1:6,2:9,3:12,4:3}[q])
+            date = date_hint(urlvalue) or document.get('sortDate') or date_hint(value) or ((ending-(1 if q<4 else 0))*12+{1:6,2:9,3:12,4:3}[q])
     return (date, int(quarter.group(1)) if quarter else 0,
             0 if 'bseindia.com' in document['url'] else 1)
 
@@ -277,6 +314,11 @@ def discover(company, progress=lambda *_: None):
     documents, visited, diagnostics, queue = {}, set(), [], [(url, 0) for url in roots]
     issuer_hosts = {urllib.parse.urlsplit(url).hostname for url in roots if 'screener.in' not in url}
     while queue and len(visited) < 16:
+        def priority(item):
+            link,level=item;value=urllib.parse.unquote(link).lower()
+            score=100 if level==0 else 90 if re.search(r'[?&][^=&]*year[^=&]*=',value) else 80 if re.search(r'transcript|concall|conference.?call',value) else 70 if re.search(r'annual|integrated.?report',value) else 60 if re.search(r'quarter|financial',value) else 30
+            return (-score,level)
+        queue.sort(key=priority)
         url, depth = queue.pop(0)
         url = urllib.parse.urldefrag(url)[0]
         if url in visited:
@@ -301,14 +343,14 @@ def discover(company, progress=lambda *_: None):
             allowed = host in issuer_hosts or any(host == d or host.endswith('.' + d) for d in ('nseindia.com', 'bseindia.com', 'ril.com', 'tcs.com', 'infosys.com', 'hul.co.in', 'larsentoubro.com', 'ntpc.co.in'))
             # A directory link itself is not research evidence. Only its linked
             # primary report/transcript can become an indexed document.
-            kind = document_kind(href, label, surrounding)
+            kind = document_kind(href, label, surrounding+' '+url)
             if kind and allowed:
                 title = re.sub(r'\s+', ' ', label).strip()
                 if not title or title.lower() in ('download', 'click here', 'pdf'):
                     title = urllib.parse.unquote(Path(parsed.path).name)
                 document = {'url': urllib.parse.urldefrag(href)[0], 'title': (ticker + ' — ' + title)[:400],
                             'type': kind, 'period': document_period(href, label, surrounding), 'discoveredFrom': url}
-                document['sortDate'] = date_hint(surrounding + ' ' + label) or date_hint(href)
+                document['sortDate'] = date_hint(href) or date_hint(label) or date_hint(surrounding)
                 document['discoveryQuality'] = (3 if label.strip() else 0) + (2 if document['sortDate'] else 0) + (0 if 'unverified' in document['period'] else 1)
                 previous = documents.get(document['url'])
                 if not previous or document['discoveryQuality']>previous.get('discoveryQuality',0) or (document['discoveryQuality']==previous.get('discoveryQuality',0) and len(document['title'])>len(previous['title'])):
@@ -318,9 +360,6 @@ def discover(company, progress=lambda *_: None):
                 if re.search(r'annual|financial|quarter|earning|transcript|concall|investor|report.*filing', description, re.I) and not re.search(r'\.(mp3|mp4|zip|xlsx|jpg|png)(?:[?#]|$)', href, re.I):
                     if not parsed.path.lower().endswith('.pdf'):
                         queue.append((href, depth + 1))
-        have = list(documents.values())
-        if sum(d['type'] == 'annual_report' for d in have) >= 2 and sum(d['type'] == 'earnings_call' for d in have) >= 6:
-            break
     chosen = []
     for kind, limit in (('annual_report', 12), ('earnings_call', 16)):
         ranked = sorted((d for d in documents.values() if d['type'] == kind), key=discovery_score, reverse=True)
@@ -513,6 +552,15 @@ class Worker:
             self.heartbeat()
             self.last_progress = time.monotonic()
 
+    def question_checkpoint(self,job,stage,progress):
+        # Call only between network/index batches, with no converter running.
+        self.progress(job,stage,progress)
+        now=time.monotonic()
+        if self.model_enabled and now-self.last_question_check>45:
+            self.last_question_check=now
+            self.answer_waiting_question()
+            self.progress(job,stage,progress)
+
     def directory_lookup(self):
         lookup = self.api('directory/claim', {}).get('lookup')
         if not lookup:
@@ -656,14 +704,10 @@ class Worker:
                     if len(batch) == 20:
                         self.api('document/chunks', {'jobId': job['id'], 'lease': job['lease'], 'versionId': prepared['versionId'], 'chunks': batch})
                         progress={'pages': total, 'chunksIndexed': batch[-1]['ordinal'] + 1, 'chunks': count}
-                        self.progress(job, 'Indexing page evidence', progress)
                         # Converters have exited here. Serve an explicit question
                         # serially at a bounded checkpoint, so background reports
                         # do not delay existing-company answers for many minutes.
-                        if self.model_enabled and time.monotonic()-self.last_question_check>45:
-                            self.last_question_check=time.monotonic()
-                            self.answer_waiting_question()
-                            self.progress(job,'Indexing page evidence',progress)
+                        self.question_checkpoint(job,'Indexing page evidence',progress)
                         batch = []
                 if batch:
                     self.api('document/chunks', {'jobId': job['id'], 'lease': job['lease'], 'versionId': prepared['versionId'], 'chunks': batch})
@@ -676,7 +720,7 @@ class Worker:
             discovery = json.loads(discovery_path.read_text())
             candidates, diagnostics = discovery['documents'], discovery['diagnostics']
         else:
-            candidates, diagnostics = discover(job['company'], lambda s,p: self.progress(job,s,p))
+            candidates, diagnostics = discover(job['company'], lambda s,p: self.question_checkpoint(job,s,p))
             discovery_path.write_text(json.dumps({'documents':candidates,'diagnostics':diagnostics}))
         active_calls={d['source_url']:d for d in job.get('documents',[]) if d.get('active_version') and d['type']=='earnings_call'}
         candidate_urls={d['url'] for d in candidates}

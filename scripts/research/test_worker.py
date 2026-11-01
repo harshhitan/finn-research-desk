@@ -11,6 +11,52 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_table_rows_distinguish_synopses_notices_and_transcripts(self):
+        parser=worker.Links('https://issuer.test/investors/conference-call')
+        parser.feed('<table><tr><td>Presentation/Key Performance Highlights</td><td><a href="/file.pdf">Q1</a></td></tr><tr><td>Intimation of conference call</td><td><a href="/notice.pdf">Q2</a></td></tr><tr><td>Transcript</td><td><a href="/FinalTransctiptQ2FY26.pdf">Q2</a></td></tr></table>')
+        kinds=[worker.document_kind(url,label,context+' '+parser.base) for url,label,context in parser.links]
+        self.assertEqual(kinds,[None,None,'earnings_call'])
+        self.assertIsNone(worker.document_kind('https://issuer.test/OFS_Q1_FY27.pdf','Q1','conference-call'))
+
+    def test_financial_year_selector_uses_two_observed_same_page_targets(self):
+        parser=worker.Links('https://issuer.test/investors/conference-call?language=en')
+        parser.feed('<select name="field_financial_year_target_id"><option value="8">2024-25</option><option value="10">2025-26</option><option value="27" selected>2026-27</option><option value="All">Any</option></select>')
+        self.assertEqual([url for url,_,_ in parser.links],['https://issuer.test/investors/conference-call?language=en&field_financial_year_target_id=10','https://issuer.test/investors/conference-call?language=en&field_financial_year_target_id=8'])
+        self.assertEqual(worker.document_kind('https://issuer.test/FinalTransctiptQ2FY26.pdf','Q2','https://issuer.test/investors/conference-call'),'earnings_call')
+
+    def test_neighbouring_table_year_does_not_overwrite_filename_period(self):
+        old={'url':'https://issuer.test/ntpcq3fy18concalltranscriptfinal.pdf','title':'NTPC','period':'Q1 2025-26','type':'earnings_call'}
+        newer={'url':'https://issuer.test/Earning-Call-Transcript_04022026_0.pdf','title':'Quarterly transcript','period':'Q1 2016-17','type':'earnings_call'}
+        self.assertEqual(worker.document_period(old['url'],'Download','Q1 2025-26'),'Q3 2018')
+        self.assertEqual(worker.document_period('https://issuer.test/no-date.pdf','Download','Q1 2025-26'),'Period unverified')
+        self.assertGreater(worker.discovery_score(newer),worker.discovery_score(old))
+
+    def test_compact_filename_dates_are_calendar_checked(self):
+        self.assertEqual(worker.date_hint('Transcript_04022026_0.pdf'),2026*12+2)
+        self.assertEqual(worker.date_hint('Concall25012025.pdf'),2025*12+1)
+        self.assertEqual(worker.date_hint('Transcript_20260524.pdf'),2026*12+5)
+        self.assertEqual(worker.date_hint('Transcript_31022026.pdf'),0)
+
+    def test_discovery_continues_after_an_old_archive_fills_the_count(self):
+        root='https://issuer.test/ir';current='https://issuer.test/investors/conference-call'
+        links=[(f'https://issuer.test/annual-report-{y}.pdf','Annual report','') for y in [2026,2025]]+[(f'https://issuer.test/transcriptq{q}fy{y}.pdf','Download','Q1 2025-26') for y in [18,19] for q in [1,2,3]]+[(current,'Conference calls','')]
+        def pages(url):
+            if url==root:return links
+            if url==current:return [('https://issuer.test/earnings-call-q2fy27.pdf','Q2 FY27','')]
+            return []
+        with patch.object(worker,'html_links',side_effect=pages):
+            docs,_=worker.discover({'ticker':'TEST','sources':[root]})
+        calls=[d for d in docs if d['type']=='earnings_call']
+        self.assertEqual(calls[0]['period'],'Q2 2027');self.assertIn('q2fy27',calls[0]['url'])
+
+    def test_discovery_checkpoint_is_serial_and_renews_the_lease(self):
+        with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'1'}):
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path));events=[]
+            instance.progress=lambda *args:events.append('progress');instance.answer_waiting_question=lambda:events.append('answer')
+            with patch.object(worker.time,'monotonic',side_effect=[100,101]):
+                instance.question_checkpoint({},'Discovering',{});instance.question_checkpoint({},'Discovering',{})
+            self.assertEqual(events,['progress','answer','progress','progress']);instance.cache.close()
+
     def test_refresh_rechecks_active_calls_after_target_is_reached(self):
         with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'0'}):
             instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))
