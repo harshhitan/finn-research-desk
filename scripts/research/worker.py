@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.9'
+VERSION = 'research-2.10'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-2'
 DISCOVERY_POLICY = 'primary-links-3'
@@ -787,7 +787,7 @@ class Worker:
             client = module.Codex('/home/azureuser/.local/bin/codex', str(work))
             value = client.analyse(question)
             stage='validation'
-            self.api('question/complete', {'id': question['id'], 'lease': question['lease'], 'answer': value})
+            self.api('question/complete', {'id': question['id'], 'lease': question['lease'], 'answer': value, 'usage':getattr(client,'last_usage',None)})
         except Exception as error:
             self.record_model_failure(question,stage,error,value)
             raise

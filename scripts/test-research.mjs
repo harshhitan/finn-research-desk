@@ -110,7 +110,9 @@ assert.equal(store.validateResearchAnswer({summary:negativeSummary,findings:[{te
 globalThis.__researchEnv.FINN_PRIVATE_CODEX_MODEL='changed-during-run';
 assert.equal((await handleResearch(service('question/complete',{id:claimed.id,lease:claimed.lease,answer}))).status,400,'A model/configuration change cannot populate the old cache contract');
 globalThis.__researchEnv.FINN_PRIVATE_CODEX_MODEL='test-model';
-await call('question/complete',{id:claimed.id,lease:claimed.lease,answer});
+await call('question/complete',{id:claimed.id,lease:claimed.lease,answer,usage:{inputTokens:100,outputTokens:20,cachedInputTokens:40,reasoningOutputTokens:5,totalTokens:120,privateAccount:'never stored'}});
+const usageSaved=JSON.parse(sqlite.prepare('SELECT answer FROM research_questions WHERE id=?').get(claimed.id).answer).usage;assert.equal(usageSaved.totalTokens,120);assert.equal(usageSaved.privateAccount,undefined);
+assert.equal(store.normalizeResearchUsage({inputTokens:100,outputTokens:20,cachedInputTokens:200,reasoningOutputTokens:5,totalTokens:120}),undefined,'Invalid metadata cannot corrupt a valid answer');
 const cached=await store.askQuestion('alice','TCS','What is operating cash flow?');assert.equal(cached.cached,true);assert.equal(cached.answer.model,'test-model');
 const keyBefore=await store.questionCacheKey('TCS',' Cash flow ',{types:['annual_report','earnings_call']},'source');
 assert.equal(keyBefore,await store.questionCacheKey('TCS','cash  flow',{types:['earnings_call','annual_report']},'source'),'Equivalent filter ordering/whitespace shares a cache key');
@@ -250,6 +252,12 @@ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM research_financial_facts'
 const compared=await (await handleResearch(user('/facts/compare','POST',{ticker:'HINDUNILVR',metric:'operating_cash_flow',scope:'consolidated',basePeriod:'FY2025',currentPeriod:'FY2026'}))).json();assert.equal(compared.comparison.change,'3186');assert.equal(compared.comparison.dependencies.length,2);
 assert.equal((await handleResearch(user('/facts','POST',{ticker:'HINDUNILVR',metric:'made_up_metric',scope:'consolidated'}))).status,400);
 assert.equal((await handleResearch(user('/facts/compare','POST',{ticker:'HINDUNILVR',metric:'operating_cash_flow',scope:'consolidated',basePeriod:'FY2024',currentPeriod:'FY2026'}))).status,200,'Missing inputs return an evidence gap, without making a calculation');
+// Forty narrative call mentions must not hide an actual annual income table.
+const crowdCall=currentSelection.find(d=>d.type==='earnings_call');
+for(let i=0;i<40;i++)sqlite.prepare('INSERT INTO research_chunks(id,version_id,document_id,ticker,ordinal,page,heading,text) VALUES(?,?,?,?,?,?,?,?)').run('crowded-call-'+i,crowdCall.active_version,crowdCall.id,'HINDUNILVR',100+i,100+i,'Earnings call','Revenue from operations and profit for the quarter were discussed, without a table.');
+sqlite.prepare('UPDATE research_chunks SET heading=?,text=? WHERE version_id=?').run(incomePage.heading,incomePage.text,factDocument.active_version);
+const liveIncome=await financials.getFinancialFacts('HINDUNILVR','revenue_from_operations','consolidated');assert.equal(liveIncome.facts[0].value,'200000','Statement headers retain a budget independent of call mentions');
+const liveMargin=await (await handleResearch(user('/facts/margin','POST',{ticker:'HINDUNILVR',scope:'consolidated',basePeriod:'FY2025',currentPeriod:'FY2026'}))).json();assert.equal(liveMargin.marginComparison.current.value,'20');assert.equal(liveMargin.marginComparison.changePercentagePoints,'3.3334');
 sqlite.prepare('UPDATE research_documents SET active_version=NULL WHERE id=?').run(factDocument.id);
 assert.equal((await financials.getFinancialFacts('HINDUNILVR','operating_cash_flow','consolidated')).facts.length,0,'A retired source version cannot reappear through the fact cache');
 sqlite.close();

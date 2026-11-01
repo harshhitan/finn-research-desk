@@ -2,7 +2,7 @@ import {database} from '../repository';
 import {hash,sourceVersion,stamp,parse} from './store';
 import type {ResearchPassage} from './types';
 
-export const factExtractor='financial-tables-2';
+export const factExtractor='financial-tables-3';
 export const financialMetrics={operating_cash_flow:'Net cash from operating activities',investing_cash_flow:'Net cash from investing activities',financing_cash_flow:'Net cash from financing activities',revenue_from_operations:'Revenue from operations',profit_for_year:'Reported profit for the period',profit_before_tax:'Profit before tax'};
 export type FinancialMetric=keyof typeof financialMetrics;
 export type FinancialScope='consolidated'|'standalone';
@@ -77,8 +77,13 @@ export async function getFinancialFacts(ticker:string,metric:FinancialMetric,sco
   const cacheKey='research-facts:'+await hash(JSON.stringify([ticker,metric,scope,version,factExtractor])),cached=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind(cacheKey).first<{data:string}>();
   if(cached){const result=parse<FinancialFacts|null>(cached.data,null);if(result?.sourceVersion===version)return result;}
   const match=cashMetric(metric)?'%net%cash%'+metric.split('_')[0]+'%activities%':metric==='revenue_from_operations'?'%revenue%operations%':metric==='profit_before_tax'?'%profit%before%tax%':'%profit%for%';
-  const candidateRows=await db.prepare("SELECT c.*,d.title,d.period,d.type,d.source_url FROM research_chunks c JOIN research_documents d ON d.id=c.document_id AND d.active_version=c.version_id WHERE c.ticker=? AND d.type IN ('annual_report','earnings_call') AND c.text LIKE ? ORDER BY d.period DESC,c.ordinal LIMIT 40").bind(ticker,match).all<ResearchPassage>();
-  const pages=[...new Map(candidateRows.results.map(p=>[p.document_id+':'+p.page,p])).values()].slice(0,12),found:FinancialFact[]=[];
+  const statement=cashMetric(metric)?'%statement%cash%flow%':'%statement%profit%loss%';
+  const query=(header:boolean,type:string,count:number)=>db.prepare(`SELECT c.*,d.title,d.period,d.type,d.source_url FROM research_chunks c JOIN research_documents d ON d.id=c.document_id AND d.active_version=c.version_id WHERE c.ticker=? AND d.type=? AND ${header?'(c.text LIKE ? OR c.heading LIKE ?)':'c.text LIKE ?'} ORDER BY CAST(substr(d.period,-4) AS INTEGER) DESC,c.ordinal LIMIT ?`).bind(ticker,type,header?statement:match,...(header?[statement]:[]),count).all<ResearchPassage>();
+  const [headers,annualRows,callHeaders,callRows]=await Promise.all([query(true,'annual_report',20),query(false,'annual_report',24),query(true,'earnings_call',12),query(false,'earnings_call',24)]);
+  // Narrative mentions in calls cannot consume the annual statement budget.
+  // Header-first candidates also find a total in a later chunk of the same page.
+  const distinct=(rows:ResearchPassage[],limit:number)=>[...new Map(rows.map(p=>[p.document_id+':'+p.page,p])).values()].slice(0,limit);
+  const pages=[...distinct([...headers.results,...annualRows.results],8),...distinct([...callHeaders.results,...callRows.results],4)],found:FinancialFact[]=[];
   for(const page of pages){
     const rows=await db.prepare('SELECT c.*,d.title,d.period,d.type,d.source_url FROM research_chunks c JOIN research_documents d ON d.id=c.document_id AND d.active_version=c.version_id WHERE c.ticker=? AND c.version_id=? AND c.page=? ORDER BY c.ordinal LIMIT 41').bind(ticker,page.version_id,page.page).all<ResearchPassage>();
     if(rows.results.length>40)continue;

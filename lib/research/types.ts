@@ -3,7 +3,8 @@ export type ResearchDocument={id:string;ticker:string;title:string;type:"annual_
 export type ResearchPassage={id:string;document_id:string;ticker:string;page:number;heading:string;text:string;title:string;period:string;type:string;source_url:string;version_id:string};
 export type ResearchFilters={period?:string;types?:string[]};
 export type ResearchFinding={text:string;citations:{chunkId:string;quote:string}[]};
-export type ResearchAnswer={summary:string;findings:ResearchFinding[];missingEvidence:string[];model:string;createdAt:string};
+export type ResearchUsage={inputTokens:number;outputTokens:number;cachedInputTokens:number;reasoningOutputTokens:number;totalTokens:number;cacheWriteInputTokens?:number};
+export type ResearchAnswer={summary:string;findings:ResearchFinding[];missingEvidence:string[];model:string;createdAt:string;usage?:ResearchUsage};
 export type ResearchQuestion={id:string;ticker:string;question:string;filters:ResearchFilters;status:string;answer:ResearchAnswer|null;context:ResearchPassage[];error:string|null;created_at:string;updated_at:string;cached?:boolean};
 export const seedResearchCompanies=[
   {ticker:"RELIANCE",name:"Reliance Industries",isin:"INE002A01018",sources:["https://www.ril.com/investors/financial-reporting","https://www.ril.com/investors/events-presentations"]},

@@ -1,6 +1,6 @@
 import {env} from "cloudflare:workers";
 import {database} from "../repository";
-import {annualPeriod,company,coverage,documents,enqueuePreparation,hash,parse,questionCacheKey,refreshQuestion,researchInstructions,researchAnswerSchema,seedResearch,stamp,synchronizeCompany,validateResearchAnswer,sourceVersion} from "./store";
+import {annualPeriod,company,coverage,documents,enqueuePreparation,hash,parse,questionCacheKey,refreshQuestion,researchInstructions,researchAnswerSchema,seedResearch,stamp,synchronizeCompany,validateResearchAnswer,normalizeResearchUsage,sourceVersion} from "./store";
 import {seedResearchCompanies,type ResearchPassage} from "./types";
 import {researchTools} from "./tools";
 
@@ -107,7 +107,8 @@ export async function researchWorkerAction(action:string,body:any){
     }
     if(await sourceVersion(q.ticker)!==q.source_version)throw new Error("Research evidence changed during analysis; retry against the new document versions");
     if(await questionCacheKey(q.ticker,q.question,parse(q.filters,{}),q.source_version)!==q.cache_key)throw new Error('Research model or prompt configuration changed during analysis; retry explicitly.');
-    const answer=validateResearchAnswer(body.answer,parse<ResearchPassage[]>(q.context,[]),String(environment().FINN_PRIVATE_CODEX_MODEL||"Codex"));
+    const answer=validateResearchAnswer(body.answer,parse<ResearchPassage[]>(q.context,[]),String(environment().FINN_PRIVATE_CODEX_MODEL||"Codex")),usage=normalizeResearchUsage(body.usage);
+    if(usage)answer.usage=usage;
     await db.prepare("UPDATE research_questions SET status='done',answer=?,error=NULL,lease=NULL,lease_until=NULL,updated_at=? WHERE id=? AND lease=? AND status='running'").bind(JSON.stringify(answer),now,q.id,q.lease).run();return {accepted:true};
   }
   const job=await leased(body);

@@ -52,6 +52,12 @@ class TransportTests(unittest.TestCase):
             self.assertEqual(str(raised.exception),'Codex turn did not complete ('+expected+')')
             self.assertNotIn('private',str(raised.exception))
 
+    def test_usage_is_provider_metadata_and_excludes_unknown_fields(self):
+        usage={'inputTokens':100,'outputTokens':20,'cachedInputTokens':40,'reasoningOutputTokens':5,'totalTokens':120,'cacheWriteInputTokens':0,'privateAccount':'secret'}
+        client,_,_=self.client([{'method':'thread/tokenUsage/updated','params':{'tokenUsage':{'last':usage}}},*self.complete_events()])
+        self.assertEqual(client.analyse({'model':'fixture','instructions':'Use evidence','input':{}}),{'answer':'cited'})
+        self.assertEqual(client.last_usage['totalTokens'],120);self.assertNotIn('privateAccount',client.last_usage)
+
 
 if __name__=='__main__':
     unittest.main()

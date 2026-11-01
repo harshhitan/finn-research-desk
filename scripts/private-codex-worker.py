@@ -80,6 +80,7 @@ class Codex:
         return [{"model": item["model"], "isDefault": item.get("isDefault", False)} for item in result["data"]]
 
     def analyse(self, job):
+        self.last_usage = None
         thread = self.request("thread/start", {
             "model": job["model"], "ephemeral": True, "permissions": "finn",
             "approvalPolicy": "untrusted", "cwd": str(Path.cwd()),
@@ -99,6 +100,10 @@ class Codex:
             event = self.read(max(1, deadline - time.monotonic()))
             self.reject_request(event)
             params = event.get("params", {})
+            if event.get('method')=='thread/tokenUsage/updated':
+                usage=(params.get('tokenUsage') or {}).get('last') or {}
+                fields=('inputTokens','outputTokens','cachedInputTokens','cacheWriteInputTokens','reasoningOutputTokens','totalTokens')
+                self.last_usage={key:usage[key] for key in fields if type(usage.get(key)) is int and 0<=usage[key]<=10000000}
             if event.get("method") == "item/completed":
                 item = params.get("item", {})
                 if item.get("type") == "agentMessage":
