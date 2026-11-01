@@ -30,15 +30,24 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2'
+VERSION = 'research-2.1'
 PARSER = 'poppler-layout-pages-v2'
+CALL_POLICY = 'quarterly-dialogue-1'
 MAX_PDF = 64 * 1024 * 1024
 MAX_HTML = 3 * 1024 * 1024
 USER_AGENT = 'Mozilla/5.0 (compatible; FINNResearch/1.0; primary-document research)'
 
 
 class ResearchError(Exception):
-    pass
+    def __init__(self,message,*,exclusions=None):
+        super().__init__(message)
+        self.exclusions=exclusions or []
+
+
+class IneligibleDocument(ResearchError):
+    def __init__(self, reason, document, digest):
+        super().__init__(reason)
+        self.exclusion={'url':document['url'],'type':document['type'],'hash':digest,'reason':reason}
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -321,6 +330,21 @@ def available_memory():
         return 0
 
 
+def is_call_transcript(content, pages):
+    # A filing letter or recording notice can contain the word "transcript"
+    # without containing the call. Require actual dialogue in the PDF itself.
+    if pages < 2 or len(content.strip()) < 1500:
+        return False
+    opening=re.sub(r'\s+',' ',content[:6000])
+    if re.search(r'\b(?:analyst|investor)(?:\s+AI)?\s+day\b|fireside\s+chat|annual\s+analysts|institutional\s+investors\s+meet',opening[:2400],re.I):
+        return False
+    if not re.search(r'earnings\s+(?:conference\s+)?call|quarter(?:ly)?\s+(?:financial\s+)?(?:results|ended)|\bQ[1-4]\s*(?:FY|20\d{2})',opening,re.I):
+        return False
+    dialogue = re.search(r'\b(?:moderator|operator|company\s+speaker|questioner)\s*[:(]',content,re.I)
+    speakers = set(re.findall(r'^\s*((?:[A-Z][A-Za-z.\'’–-]{1,30}\s+){1,3}[A-Z][A-Za-z.\'’–-]{1,30})\s*:',content,re.M))
+    return bool(dialogue or len(speakers)>=2)
+
+
 def child_limits():
     limit = 160 * 1024 * 1024
     resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
@@ -426,6 +450,7 @@ class Worker:
         self.model_enabled = os.environ.get('FINN_RESEARCH_MODEL_ENABLED') == '1'
         self.cache = sqlite3.connect(str(self.state / 'cache.sqlite'))
         self.cache.execute('CREATE TABLE IF NOT EXISTS files(url TEXT PRIMARY KEY,hash TEXT NOT NULL,fetched_at REAL NOT NULL)')
+        self.cache.execute('CREATE TABLE IF NOT EXISTS call_validation(hash TEXT NOT NULL,policy TEXT NOT NULL,eligible INTEGER NOT NULL,period TEXT NOT NULL,reason TEXT NOT NULL,PRIMARY KEY(hash,policy))')
         (self.state / 'cache').mkdir(exist_ok=True)
 
     def api(self, path, body):
@@ -527,7 +552,13 @@ class Worker:
         self.api('directory/complete', {**lookup,'matches':matches,'failed':failed})
         return True
 
-    def process_document(self, job, document):
+    def reuse_document(self,job,document,known,period=None):
+        record=known['document']
+        if record.get('active_version',record.get('version_id'))!=record.get('version_id'):
+            self.api('document/finish',{'jobId':job['id'],'lease':job['lease'],'versionId':record['version_id'],'chunkCount':record['chunk_count']})
+        return {'url':document['url'],'period':period or record['period'],'reused':True,'pages':record['page_count']}
+
+    def process_document(self, job, document, seen_periods=None):
         with tempfile.TemporaryDirectory(prefix='document-', dir=self.state) as temporary:
             directory = Path(temporary)
             self.progress(job, 'Downloading ' + document['type'], {'title': document['title']})
@@ -552,8 +583,14 @@ class Worker:
                         total_bytes -= old.stat().st_size
                         old.unlink()
             known = self.api('document/known', {'jobId': job['id'], 'lease': job['lease'], 'hash': digest, 'parser': PARSER, 'type': document['type']})
-            if known.get('known'):
-                return {'url': document['url'], 'period':known['document']['period'], 'reused': True, 'pages': known['document']['page_count']}
+            if document['type']=='earnings_call':
+                validation=self.cache.execute('SELECT eligible,period,reason FROM call_validation WHERE hash=? AND policy=?',(digest,CALL_POLICY)).fetchone()
+                if validation and not validation[0]:
+                    raise IneligibleDocument(validation[2],document,digest)
+                if validation and known.get('known'):
+                    return self.reuse_document(job,document,known,validation[1])
+            if known.get('known') and document['type']!='earnings_call':
+                return self.reuse_document(job,document,known)
             chunks_file, pages_file = directory / 'chunks.jsonl', directory / 'pages.jsonl'
             total, readable, count, identity_text = 0, 0, 0, ''
             with chunks_file.open('w', encoding='utf-8') as chunks, pages_file.open('w', encoding='utf-8') as pages:
@@ -573,12 +610,21 @@ class Worker:
             short = job['ticker'].lower()
             if not ((len(short)>2 and re.search(r'\b'+re.escape(short)+r'\b',normalised_identity)) or (names and sum(w in normalised_identity for w in names)>=min(2,len(names)))):
                 raise ResearchError('The extracted document does not establish the selected company identity')
-            if document['type']=='earnings_call' and not re.search(r'transcript|moderator|operator|questions?\s*(?:and|&)\s*answers?',identity_text,re.I):
-                raise ResearchError('Document content does not establish an earnings-call transcript')
+            if document['type']=='earnings_call' and not is_call_transcript(identity_text,total):
+                reason='Document is a notice or event rather than a quarterly earnings-call transcript'
+                self.cache.execute('INSERT OR REPLACE INTO call_validation VALUES(?,?,0,?,?)',(digest,CALL_POLICY,'Period unverified',reason));self.cache.commit()
+                raise IneligibleDocument(reason,document,digest)
             if document['type']=='earnings_call' and re.search(r'annual\s+analysts|institutional\s+investors\s+meet',identity_text[:2500],re.I):
-                raise ResearchError('Annual investor meetings are outside quarterly earnings-call coverage')
+                raise IneligibleDocument('Annual investor meetings are outside quarterly earnings-call coverage',document,digest)
             if document['type']=='annual_report' and not re.search(r'annual\s+report|integrated\s+(?:annual\s+)?report',identity_text,re.I):
                 raise ResearchError('Document content does not establish an annual report')
+            if document['type']=='earnings_call':
+                self.cache.execute('INSERT OR REPLACE INTO call_validation VALUES(?,?,1,?,?)',(digest,CALL_POLICY,verified_period(document['type'],identity_text),''));self.cache.commit()
+            if known.get('known'):
+                return self.reuse_document(job,document,known,verified_period(document['type'],identity_text))
+            period=verified_period(document['type'],identity_text)
+            if seen_periods and period!='Period unverified' and period in seen_periods:
+                return {'url':document['url'],'period':period,'duplicatePeriod':True,'pages':total}
             self.progress(job, 'Storing original and extracted evidence', {'pages': total, 'readablePages': readable, 'chunks': count})
             self.upload(job, digest, pdf, 'pdf')
             self.upload(job, digest, pages_file, 'jsonl')
@@ -609,7 +655,7 @@ class Worker:
         else:
             candidates, diagnostics = discover(job['company'], lambda s,p: self.progress(job,s,p))
             discovery_path.write_text(json.dumps({'documents':candidates,'diagnostics':diagnostics}))
-        completed, failures = [], []
+        completed, failures, exclusions = [], [], []
         counts = {'annual_report':0,'earnings_call':0}
         periods = {'annual_report':set(),'earnings_call':set()}
         for i, document in enumerate(candidates):
@@ -618,7 +664,7 @@ class Worker:
                 continue
             self.progress(job, 'Preparing document ' + str(i + 1) + ' of ' + str(len(candidates)), {'completed': len(completed), 'candidates': len(candidates), 'failures': failures[-8:]})
             try:
-                result = self.process_document(job, document)
+                result = self.process_document(job, document,periods[document['type']])
                 completed.append(result)
                 key = result.get('period','Period unverified')
                 if key != 'Period unverified':
@@ -626,12 +672,14 @@ class Worker:
                 # Unknown periods remain available but never inflate the target.
                 counts[document['type']] = len(periods[document['type']])
             except Exception as error:
+                if isinstance(error,IneligibleDocument):
+                    exclusions.append(error.exclusion)
                 reason = str(error) if isinstance(error, ResearchError) else type(error).__name__
                 failures.append({'url': document['url'], 'reason': reason[:300]})
         self.progress(job, 'Recording document coverage', {'completed': len(completed), 'verifiedPeriods':{k:sorted(v) for k,v in periods.items()}, 'candidates': len(candidates), 'documents': [{**d,'url':d['url'][:180]} for d in completed[-16:]], 'failures': [{**d,'url':d['url'][:180]} for d in failures[-8:]], 'discoveryDiagnostics': [{**d,'url':d['url'][:180]} for d in diagnostics[-6:]]})
         if not completed:
-            raise ResearchError('No eligible document could be indexed; inspect discovery/extraction diagnostics')
-        self.api('finish', {'jobId': job['id'], 'lease': job['lease'], 'parser':PARSER, 'error': 'Some documents could not be processed; inspect source coverage.' if failures else None})
+            raise ResearchError('No eligible document could be indexed; inspect discovery/extraction diagnostics',exclusions=exclusions)
+        self.api('finish', {'jobId': job['id'], 'lease': job['lease'], 'parser':PARSER, 'exclusions':exclusions, 'error': 'Some sources were unavailable or outside quarterly earnings-call coverage; inspect source checks.' if failures else None})
 
     def answer(self, question):
         # Reuse the existing restricted, tool-free model transport. Retrieval is
@@ -676,7 +724,7 @@ class Worker:
                 print(json.dumps({'ticker': job['ticker'], 'status': 'prepared'}), flush=True)
             except Exception as error:
                 reason = str(error) if isinstance(error, ResearchError) else type(error).__name__
-                self.api('failed', {'jobId': job['id'], 'lease': job['lease'], 'error': reason[:500]})
+                self.api('failed', {'jobId': job['id'], 'lease': job['lease'], 'error': reason[:500], 'exclusions':getattr(error,'exclusions',[])})
                 print(json.dumps({'ticker': job['ticker'], 'status': 'preparation_error', 'reason': reason[:300]}), flush=True)
 
 

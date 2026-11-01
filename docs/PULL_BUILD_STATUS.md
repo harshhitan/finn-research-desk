@@ -44,7 +44,9 @@ Successful v2 preparation retires the old v1 selection from current retrieval.
 Retrieval filters company/type/year before searching, reranks operating-cash
 evidence and limits repeated pages/documents. Model answers must supply exact
 quotes and known passage IDs; unsupported numerical claims are rejected.
-Question caches include the current source-version hash. Failed inference needs
+Question caches include the current source-version hash, configured model and
+explicit prompt/retrieval/validation versions. Retrieval verifies a stable source
+snapshot before queuing inference. Failed inference needs
 explicit retry and never repeats automatically.
 
 ## Validation
@@ -52,7 +54,7 @@ explicit retry and never repeats automatically.
 Research protocol tests cover authorization, leases/replay, original storage,
 atomic publication and metadata, annual alias retirement, historical PDFs,
 issuer/type/year filtering, retrieval ranking/diversity, model-off evidence,
-answer/citation validation, caching and directory fallback. Nine Linux worker
+answer/citation validation, caching and directory fallback. Eleven Linux worker
 tests cover URL, memory, document, period, conversion and disabled-model guards.
 Existing portfolio tests and TypeScript checks pass.
 The 28-case retrieval review set is in `scripts/research/evaluation-cases.json`.
@@ -76,6 +78,17 @@ live model inference with the owner's authorized sign-in. Model execution remain
 explicitly disabled and `/home/azureuser/.codex` is inaccessible to this service.
 No authentication has been restored.
 
+The stricter call policy requires earnings context and dialogue in the PDF, not
+merely a filing letter mentioning a transcript. Analyst days, fireside chats and
+recording notices are excluded. Eligibility is cached by PDF hash and policy
+version. Rechecks retire an older misclassified source only when its exact bytes
+match; a newly broken or replaced URL cannot remove an older valid original.
+Previously converted annual formats can be reactivated with their stored chunks
+and provenance, avoiding a full upload on every refresh. Coverage now exposes
+verified period counts and the latest source-check reasons. A company with
+partially readable documents remains partial, and expired jobs reconcile company
+status rather than leaving an empty library preparing indefinitely.
+
 ## Operations and recovery
 
 On the VM, inspect `systemctl status finn-research.service` and
@@ -86,6 +99,13 @@ logs, command arguments, source or documentation. State/cache is under
 to 2 GiB. Document leases recover after ten minutes and allow at most two attempts.
 Refresh from a company's Prepare documents button. The protected worker bootstrap
 also accepts `refresh: true` for the six seed companies, deduplicating active jobs.
+Use `reconcile: true` to recompute their readiness without adding jobs. For a
+planned worker update, first stop the service, then call the protected
+`maintenance/yield` operation with the expected running job ID and
+`reason: worker_update`, install the checked worker, and start the service.
+Published/staged data is retained; the handoff invalidates the previous lease and
+does not charge a planned update against the two failure attempts. Never yield a
+lease while its original service is still running.
 
 Stop/start only `finn-research.service` to pause/resume ingestion. The separate
 `finn-collector.timer` remains the ordinary data collector; the old model worker

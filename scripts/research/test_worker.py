@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import socket
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -10,6 +11,32 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_known_call_reuses_eligibility_only_for_the_same_hash_and_policy(self):
+        with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'0'}):
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))
+            digest='a'*64;url='https://issuer.test/call.pdf'
+            (Path(path)/'cache'/(digest+'.pdf')).write_bytes(b'%PDF fixture')
+            instance.cache.execute('INSERT INTO files VALUES(?,?,?)',(url,digest,time.time()))
+            instance.cache.execute('INSERT INTO call_validation VALUES(?,?,1,?,?)',(digest,worker.CALL_POLICY,'Q1 FY2027',''));instance.cache.commit()
+            instance.api=lambda action,body:{'known':True,'document':{'page_count':3}} if action=='document/known' else {}
+            with patch.object(worker,'iter_pages') as extraction:
+                result=instance.process_document({'id':'job','lease':'lease'},{'url':url,'title':'Call','type':'earnings_call'})
+                self.assertTrue(result['reused']);self.assertEqual(result['period'],'Q1 FY2027');extraction.assert_not_called()
+            instance.cache.execute('UPDATE call_validation SET eligible=0,reason=?',('A recording notice',));instance.cache.commit()
+            with patch.object(worker,'iter_pages') as extraction:
+                with self.assertRaises(worker.IneligibleDocument):
+                    instance.process_document({'id':'job','lease':'lease'},{'url':url,'title':'Call','type':'earnings_call'})
+                extraction.assert_not_called()
+            instance.cache.close()
+
+    def test_recording_notices_are_not_transcripts(self):
+        notice='Please find the earnings call transcript at our website. Audio recording is available. '*30
+        self.assertFalse(worker.is_call_transcript(notice,1))
+        self.assertFalse(worker.is_call_transcript(notice,3))
+        self.assertTrue(worker.is_call_transcript('Moderator: Welcome to the quarterly earnings call. '+('Company reports its operating performance and revenue. '*40),3))
+        self.assertTrue(worker.is_call_transcript('Q2 FY2027 earnings call\nSalil Parekh: Welcome.\nSandeep Mahindroo: Thank you.\n'+('Reported performance and customer demand. '*50),3))
+        self.assertFalse(worker.is_call_transcript('Investor AI Day\nModerator: Welcome. '+('Discussion of technology strategies and products. '*50),12))
+
     def test_period_is_read_from_document_not_neighbouring_link(self):
         self.assertEqual(worker.verified_period('annual_report','Reliance Industries Integrated Annual Report 2025-26 Contents 2024-25'),'FY2026')
         self.assertEqual(worker.verified_period('annual_report','Annual Report 2026'),'FY2026')

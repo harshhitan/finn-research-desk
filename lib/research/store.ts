@@ -1,4 +1,5 @@
 import {database} from "../repository";
+import {env} from "cloudflare:workers";
 import {seedResearchCompanies,type ResearchCompany,type ResearchDocument,type ResearchFilters,type ResearchPassage,type ResearchQuestion,type ResearchAnswer} from "./types";
 
 export const stamp=()=>new Date().toISOString();
@@ -86,6 +87,27 @@ export async function sourceVersion(ticker:string){
   const rows=await database().prepare("SELECT id,active_version FROM research_documents WHERE ticker=? AND active_version IS NOT NULL ORDER BY id").bind(ticker).all();
   return hash(JSON.stringify(rows.results));
 }
+export async function evidenceSnapshot(ticker:string,question:string,filters:ResearchFilters={}){
+  for(let attempt=0;attempt<2;attempt++){
+    const before=await sourceVersion(ticker),passages=await searchCorpus(ticker,question,filters),after=await sourceVersion(ticker);
+    if(before===after)return {passages,version:after};
+  }
+  throw new Error('Documents changed during retrieval. Please retry against the updated library.');
+}
+export async function questionCacheKey(ticker:string,question:string,filters:ResearchFilters,version:string){
+  const normalized={...(filters.period?{period:filters.period}:{}),...(filters.types?{types:[...new Set(filters.types)].sort()}: {})};
+  return hash(JSON.stringify([ticker,question.trim().replace(/\s+/g,' ').toLowerCase(),normalized,version,{prompt:'research-1',retrieval:'fts-neighbours-3',validation:'citations-1',model:(env as unknown as Record<string,unknown>).FINN_PRIVATE_CODEX_MODEL||'Codex'}]));
+}
+export async function synchronizeCompany(ticker:string,error:string|null=null){
+  const db=database(),docs=await documents(ticker),indexed=docs.filter(d=>d.active_version);
+  const annuals=new Set(indexed.filter(d=>d.type==='annual_report'&&/^FY20\d{2}$/.test(d.period)).map(d=>d.period)).size;
+  const calls=new Set(indexed.filter(d=>d.type==='earnings_call'&&/^Q[1-4] FY20\d{2}$/.test(d.period)).map(d=>d.period)).size;
+  const ready=annuals>=2&&calls>=6&&indexed.every(d=>d.status==='ready');
+  const active=await db.prepare("SELECT id FROM research_jobs WHERE ticker=? AND status IN ('queued','running','retry') LIMIT 1").bind(ticker).first();
+  const status=ready?'ready':indexed.length?'partial':active?'preparing':'failed';
+  await db.prepare('UPDATE research_companies SET status=?,error=?,updated_at=? WHERE ticker=?').bind(status,error||(!ready?'Coverage is incomplete or some pages have no usable text; inspect sources and diagnostics.':null),stamp(),ticker).run();
+  return {status,indexed:indexed.length};
+}
 export async function workerStatus(){
   const row=await database().prepare("SELECT * FROM research_worker WHERE id='vm'").first<any>();
   const online=!!row&&Date.now()-Date.parse(row.last_seen)<300000;
@@ -96,19 +118,19 @@ export async function refreshQuestion(id:string,owner:string){
   const db=database(),q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND owner=?").bind(id,owner).first<any>();
   if(!q)return null;
   if(["waiting_documents","waiting_model","queued"].includes(q.status)){
-    const filters=parse<ResearchFilters>(q.filters,{}),passages=await searchCorpus(q.ticker,q.question,filters),version=await sourceVersion(q.ticker);
+    const filters=parse<ResearchFilters>(q.filters,{}),{passages,version}=await evidenceSnapshot(q.ticker,q.question,filters);
     const active=await db.prepare("SELECT id FROM research_jobs WHERE ticker=? AND status IN ('queued','running','retry') LIMIT 1").bind(q.ticker).first();
     const status=passages.length?(await workerStatus()).modelReady?"queued":"waiting_model":active?"waiting_documents":"no_evidence";
-    const key=await hash(JSON.stringify([q.ticker,q.question.trim().toLowerCase(),filters,version,"research-v1"]));
+    const key=await questionCacheKey(q.ticker,q.question,filters,version);
     await db.prepare("UPDATE research_questions SET context=?,source_version=?,cache_key=?,status=?,updated_at=? WHERE id=? AND status IN ('waiting_documents','waiting_model','queued')").bind(JSON.stringify(passages),version,key,status,stamp(),id).run();
     return hydrateQuestion({...q,context:JSON.stringify(passages),source_version:version,cache_key:key,status});
   }
   return hydrateQuestion(q);
 }
 export async function askQuestion(owner:string,ticker:string,question:string,filters:ResearchFilters={}){
-  const db=database(),version=await sourceVersion(ticker),key=await hash(JSON.stringify([ticker,question.trim().toLowerCase(),filters,version,"research-v1"]));
+  const db=database(),version=await sourceVersion(ticker),key=await questionCacheKey(ticker,question,filters,version);
   const cached=await db.prepare("SELECT * FROM research_questions WHERE owner=? AND cache_key=? AND status='done' ORDER BY created_at DESC LIMIT 1").bind(owner,key).first<any>();
-  if(cached)return {...hydrateQuestion(cached),cached:true};
+  if(cached&&await sourceVersion(ticker)===version)return {...hydrateQuestion(cached),cached:true};
   const duplicate=await db.prepare("SELECT id FROM research_questions WHERE owner=? AND ticker=? AND question=? AND filters=? AND status IN ('waiting_documents','waiting_model','queued','running') LIMIT 1").bind(owner,ticker,question,JSON.stringify(filters)).first<{id:string}>();
   if(duplicate)return refreshQuestion(duplicate.id,owner);
   const recent=await db.prepare("SELECT COUNT(*) AS n FROM research_questions WHERE owner=? AND created_at>?").bind(owner,new Date(Date.now()-3600000).toISOString()).first<{n:number}>();
