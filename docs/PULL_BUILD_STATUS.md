@@ -3,6 +3,13 @@
 Active implementation, 1 November 2026. Full completion remains unproven until
 the live model path and final company coverage have been verified.
 
+Sites' canonical URL is now
+https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site/research.
+The prior cozyjay15 URL redirects. Both VM clients use the confirmed new fixed
+origin, retain no-redirect credential handling, and share the existing private
+configuration. The collector status check on this origin returned 20 quotes,
+190 filings, 711 completed collection jobs, zero pending jobs and no source errors.
+
 ## Running implementation
 
 The owner-private Site has a generic company library, protected APIs, D1 FTS5
@@ -48,6 +55,11 @@ issuer/type/year filtering, retrieval ranking/diversity, model-off evidence,
 answer/citation validation, caching and directory fallback. Nine Linux worker
 tests cover URL, memory, document, period, conversion and disabled-model guards.
 Existing portfolio tests and TypeScript checks pass.
+The 28-case retrieval review set is in `scripts/research/evaluation-cases.json`.
+Run `evaluate.py --output /var/lib/finn-research/evaluation.json` on the VM after
+preparation; it calls the protected read-only evidence check and records source
+IDs, versions, pages, excerpts, latency and scope violations. A nonempty retrieval
+result is not proof that the question is answered; review semantic support too.
 
 Still required: verify corrected live coverage and useful evidence for all six;
 exercise real unseeded onboarding; inspect responsive UI and originals; verify

@@ -161,7 +161,7 @@ def main():
     config = json.loads(config_path.read_text())
     from urllib.parse import urlparse
     endpoint = urlparse(config["url"])
-    if endpoint.scheme != "https" or endpoint.hostname != "finn-reliance-research-desk.cozyjay15.chatgpt.site" or endpoint.port or endpoint.username or endpoint.password or endpoint.path not in ("", "/") or endpoint.query or endpoint.fragment:
+    if endpoint.scheme != "https" or endpoint.hostname != "finn-reliance-research-desk.anandharshitwork03.chatgpt.site" or endpoint.port or endpoint.username or endpoint.password or endpoint.path not in ("", "/") or endpoint.query or endpoint.fragment:
         raise ValueError("Worker configuration must target the selected private FINN Site")
     while True:
         job = None

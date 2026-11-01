@@ -51,6 +51,8 @@ assert.equal(store.annualPeriod('Q2 2026'),'FY2026');assert.equal(store.annualPe
 assert.equal((await store.searchCorpus('RELIANCE','cash conversion')).length,0,'Issuer isolation');
 assert.equal((await store.searchCorpus('TCS','cash',{period:'2025'})).length,0,'Period filtering');
 assert.equal((await store.searchCorpus('TCS','cash',{types:['earnings_call']})).length,0,'Source-type filtering');
+assert.equal((await call('evidence/check',{ticker:'TCS',query:'operating cash conversion'})).passages[0].ticker,'TCS');
+assert.equal((await handleResearch(service('evidence/check',{ticker:'TCS',query:'cash',filters:{types:['news']}}))).status,400);
 assert.equal((await store.readPassages('RELIANCE',[passages[0].id])).length,0);
 assert.equal((await handleResearch(user('/documents/'+version.documentId+'/original'))).status,200);
 const done=await call('finish',identity);assert.equal(done.indexed,1);assert.equal((await store.company('TCS')).status,'partial');

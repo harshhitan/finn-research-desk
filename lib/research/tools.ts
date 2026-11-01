@@ -86,7 +86,7 @@ export async function searchCompanies(query:string){
 // Only repeated research operations are registered. These are ordinary internal
 // functions; there is no MCP server or personal-computer dependency.
 export const researchTools={
-  get_company_coverage:{readOnly:true,run:(ticker:string)=>coverage(ticker)},
-  search_corpus:{readOnly:true,run:(ticker:string,question:string,filters?:ResearchFilters)=>searchCorpus(ticker,question,filters)},
-  read_passages:{readOnly:true,run:(ticker:string,ids:string[])=>readPassages(ticker,ids)},
+  get_company_coverage:{version:'1',readOnly:true,location:'site',timeoutMs:10000,maxResults:40,modelUse:false,cache:'current document versions',inputSchema:{type:'object',required:['ticker'],properties:{ticker:{type:'string',maxLength:25}}},run:(ticker:string)=>coverage(ticker)},
+  search_corpus:{version:'2',readOnly:true,location:'site',timeoutMs:10000,maxResults:12,modelUse:false,cache:'FTS index of current document versions',inputSchema:{type:'object',required:['ticker','question'],properties:{ticker:{type:'string',maxLength:25},question:{type:'string',maxLength:600},filters:{type:'object'}}},run:(ticker:string,question:string,filters?:ResearchFilters)=>searchCorpus(ticker,question,filters)},
+  read_passages:{version:'1',readOnly:true,location:'site',timeoutMs:10000,maxResults:12,modelUse:false,cache:'immutable passage/version IDs',inputSchema:{type:'object',required:['ticker','ids'],properties:{ticker:{type:'string',maxLength:25},ids:{type:'array',maxItems:12,items:{type:'string'}}}},run:(ticker:string,ids:string[])=>readPassages(ticker,ids)},
 };

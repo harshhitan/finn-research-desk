@@ -2,6 +2,7 @@ import {env} from "cloudflare:workers";
 import {database} from "../repository";
 import {annualPeriod,company,coverage,documents,enqueuePreparation,hash,parse,refreshQuestion,researchInstructions,seedResearch,stamp,validateResearchAnswer,sourceVersion} from "./store";
 import {seedResearchCompanies,type ResearchPassage} from "./types";
+import {researchTools} from "./tools";
 
 const environment=()=>env as unknown as Record<string,any>;
 export const artifacts=()=>environment().BUCKET as R2Bucket|undefined;
@@ -33,6 +34,12 @@ export async function researchWorkerAction(action:string,body:any){
   if(action==="heartbeat"){
     const data={memoryAvailableMb:Number(body.memoryAvailableMb)||0,workerVersion:String(body.workerVersion||"").slice(0,40),modelEnabled:body.modelEnabled===true,lastChildPeakMb:Number(body.lastChildPeakMb)||0};
     await db.prepare("INSERT INTO research_worker(id,last_seen,model_ready,data) VALUES('vm',?,?,?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,model_ready=excluded.model_ready,data=excluded.data").bind(now,body.modelReady===true?1:0,JSON.stringify(data)).run();return {ok:true};
+  }
+  if(action==='evidence/check'){
+    if(!text(body.ticker,25)||!await company(body.ticker)||!text(body.query,600)||body.query.trim().length<2)throw new Error('Choose an indexed company and bounded evidence query');
+    const filters=body.filters||{};
+    if(typeof filters!=='object'||Array.isArray(filters)||Object.keys(filters).some(k=>!['period','types'].includes(k))||(filters.period!==undefined&&(!text(filters.period,9)||!/^\d{4}(?:-\d{2,4})?$/.test(filters.period)))||(filters.types!==undefined&&(!Array.isArray(filters.types)||filters.types.length>2||filters.types.some((t:any)=>!['annual_report','earnings_call'].includes(t)))))throw new Error('Invalid evidence-check filters');
+    return {coverage:await researchTools.get_company_coverage.run(body.ticker),passages:await researchTools.search_corpus.run(body.ticker,body.query,filters)};
   }
   if(action==='directory/claim'){
     const cutoff=new Date(Date.now()-180000).toISOString(),lease=crypto.randomUUID();

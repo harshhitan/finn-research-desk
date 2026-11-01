@@ -29,7 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-SITE = 'https://finn-reliance-research-desk.cozyjay15.chatgpt.site'
+SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
 VERSION = 'research-2'
 PARSER = 'poppler-layout-pages-v2'
 MAX_PDF = 64 * 1024 * 1024
