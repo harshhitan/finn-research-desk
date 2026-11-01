@@ -15,7 +15,7 @@ for(const n of modules){
 const sqlite=new DatabaseSync(':memory:');
 for(const migration of (await fs.readdir(new URL('drizzle/',root))).filter(n=>n.endsWith('.sql')).sort())sqlite.exec(await fs.readFile(new URL('drizzle/'+migration,root),'utf8'));
 const binding={prepare(sql){let values=[];return {bind(...v){values=v;return this;},async run(){return {meta:{changes:Number(sqlite.prepare(sql).run(...values).changes)}};},async first(){return sqlite.prepare(sql).get(...values)||null;},async all(){return {results:sqlite.prepare(sql).all(...values)};}};},async batch(list){sqlite.exec('BEGIN');try{const result=[];for(const s of list)result.push(await s.run());sqlite.exec('COMMIT');return result;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
-const files=new Map(),bucket={async put(key,body){files.set(key,new Uint8Array(await new Response(body).arrayBuffer()));},async head(key){return files.has(key)?{}:null;},async get(key){return files.has(key)?{body:files.get(key)}:null;}};
+const files=new Map(),bucket={async put(key,body){files.set(key,new Uint8Array(await new Response(body).arrayBuffer()));},async head(key){return files.has(key)?{size:files.get(key).length}:null;},async get(key,options){if(!files.has(key))return null;const bytes=files.get(key),range=options?.range;return {body:range?bytes.slice(range.offset,range.offset+range.length):bytes};}};
 globalThis.__researchEnv={DB:binding,BUCKET:bucket,FINN_MONITOR_JOB_TOKEN:'worker-secret',FINN_PRIVATE_CODEX_OWNER:'alice',FINN_PRIVATE_CODEX_MODEL:'test-model'};
 const store=await import(moduleUrl('research/store')),worker=await import(moduleUrl('research/worker')),tools=await import(moduleUrl('research/tools')),{handleResearch}=await import(moduleUrl('research/api'));
 const user=(path='',method='GET',body,owner='alice',origin='https://finn.test')=>new Request('https://finn.test/api/research'+path,{method,headers:{'oai-authenticated-user-id':owner,Origin:origin,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
@@ -55,6 +55,10 @@ assert.equal((await call('evidence/check',{ticker:'TCS',query:'operating cash co
 assert.equal((await handleResearch(service('evidence/check',{ticker:'TCS',query:'cash',filters:{types:['news']}}))).status,400);
 assert.equal((await store.readPassages('RELIANCE',[passages[0].id])).length,0);
 assert.equal((await handleResearch(user('/documents/'+version.documentId+'/original'))).status,200);
+const rangeRequest=user('/documents/'+version.documentId+'/original');rangeRequest.headers.set('Range','bytes=0-3');const ranged=await handleResearch(rangeRequest);assert.equal(ranged.status,206);assert.equal(await ranged.text(),'%PDF');assert.equal(ranged.headers.get('Content-Range'),'bytes 0-3/8');
+const badRange=user('/documents/'+version.documentId+'/original');badRange.headers.set('Range','bytes=99-100');assert.equal((await handleResearch(badRange)).status,416);
+const serviceOriginal=new Request('https://finn.test/api/research/documents/'+version.documentId+'/original',{headers:{'X-Finn-Job-Token':'worker-secret'}});assert.equal((await handleResearch(serviceOriginal)).status,200);
+assert.equal((await handleResearch(new Request(serviceOriginal,{method:'HEAD'}))).status,200);assert.equal((await handleResearch(new Request(serviceOriginal.url,{headers:{'X-Finn-Job-Token':'bad'}}))).status,401);
 const done=await call('finish',identity);assert.equal(done.indexed,1);assert.equal((await store.company('TCS')).status,'partial');
 assert.equal((await handleResearch(service('progress',{...identity,stage:'replayed'}))).status,400,'Completed lease cannot be replayed');
 await call('heartbeat',{modelReady:false,modelEnabled:false,memoryAvailableMb:300,workerVersion:'test'});

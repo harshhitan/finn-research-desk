@@ -23,8 +23,11 @@ export async function handleResearch(request:Request){
       const raw=await request.text();if(raw.length>250000)return json({error:"Research request is too large."},413);
       return json(await researchWorkerAction(path.slice(7),JSON.parse(raw||"{}")));
     }
-    if(!identity&&!local)return json({error:"Sign in to FINN to use company research."},401);
-    if(request.method!=="GET"&&request.headers.get("origin")!==url.origin)return json({error:"A same-origin research request is required."},403);
+    const originalRead=/^documents\/[a-f0-9]{64}\/original$/.test(path)&&['GET','HEAD'].includes(request.method);
+    // The same protected ingestion service may verify stored public-source PDFs.
+    // It never receives a visitor identity or access to their question history.
+    if(!identity&&!local&&!(originalRead&&await workerAuthorised(request)))return json({error:"Sign in to FINN to use company research."},401);
+    if(!['GET','HEAD'].includes(request.method)&&request.headers.get("origin")!==url.origin)return json({error:"A same-origin research request is required."},403);
     if(Number(request.headers.get("content-length"))>12000)return json({error:"Research request is too large."},413);
     await seedResearch();
     if(path===""&&request.method==="GET"){
@@ -63,12 +66,21 @@ export async function handleResearch(request:Request){
       const id=decodeURIComponent(passagePath[1]),ticker=url.searchParams.get("ticker")||"",passage=(await readPassages(ticker,[id]))[0];return passage?json(passage):json({error:"Evidence passage not found in the active company index."},404);
     }
     const original=path.match(/^documents\/([a-f0-9]{64})\/original$/);
-    if(original&&request.method==="GET"){
+    if(original&&['GET','HEAD'].includes(request.method)){
       const version=url.searchParams.get("version");
       const doc=await database().prepare("SELECT v.artifact_key,d.title FROM research_documents d JOIN research_document_versions v ON v.document_id=d.id WHERE d.id=? AND v.id=COALESCE(?,d.active_version) AND v.status IN ('ready','partial')").bind(original[1],version).first<{artifact_key:string;title:string}>();
       if(!doc)return json({error:"Original document not found."},404);
-      const file=await artifacts()?.get(doc.artifact_key);if(!file)return json({error:"Original document storage is temporarily unavailable."},503);
-      return new Response(file.body,{headers:{"Content-Type":"application/pdf","Content-Disposition":'inline; filename="finn-research.pdf"',"Cache-Control":"private, max-age=3600","X-Content-Type-Options":"nosniff"}});
+      const bucket=artifacts(),head=await bucket?.head(doc.artifact_key);if(!head||!bucket)return json({error:"Original document storage is temporarily unavailable."},503);
+      const size=head.size,range=request.headers.get('range');let offset=0,length=size,status=200;
+      if(range){const match=range.match(/^bytes=(\d*)-(\d*)$/);if(!match||(!match[1]&&!match[2]))return new Response(null,{status:416,headers:{'Content-Range':`bytes */${size}`}});
+        if(!match[1]){length=Math.min(size,Number(match[2]));offset=size-length;}else{offset=Number(match[1]);length=(match[2]?Math.min(size-1,Number(match[2])):size-1)-offset+1;}
+        if(!Number.isSafeInteger(offset)||!Number.isSafeInteger(length)||offset<0||offset>=size||length<1)return new Response(null,{status:416,headers:{'Content-Range':`bytes */${size}`}});status=206;
+      }
+      const headers:Record<string,string>={"Content-Type":"application/pdf","Content-Disposition":'inline; filename="finn-research.pdf"',"Cache-Control":"private, max-age=3600","X-Content-Type-Options":"nosniff",'Accept-Ranges':'bytes','Content-Length':String(length)};
+      if(status===206)headers['Content-Range']=`bytes ${offset}-${offset+length-1}/${size}`;
+      if(request.method==='HEAD')return new Response(null,{status,headers});
+      const file=await bucket.get(doc.artifact_key,range?{range:{offset,length}}:undefined);if(!file)return json({error:"Original document storage is temporarily unavailable."},503);
+      return new Response(file.body,{status,headers});
     }
     return json({error:"Research endpoint not found."},404);
   }catch(error){

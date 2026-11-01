@@ -66,6 +66,9 @@ confirmed stale v1 Infosys periods, so this is a diagnostic baseline, not final
 acceptance. Inspection of Reliance's cash-flow page showed that table headers
 and totals can fall in separate chunks; retrieval now includes bounded same-page
 header/continuation chunks with their own original citation IDs.
+Original delivery supports bounded byte ranges and HEAD requests for PDF viewers.
+The protected ingestion credential can verify stored originals through the same
+read-only route; it cannot use that exception to read visitor question history.
 
 Still required: verify corrected live coverage and useful evidence for all six;
 exercise real unseeded onboarding; inspect responsive UI and originals; verify
