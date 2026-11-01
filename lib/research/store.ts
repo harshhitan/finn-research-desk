@@ -43,13 +43,14 @@ export async function enqueuePreparation(ticker:string,owner:string,priority=10)
   const actual=await db.prepare("SELECT id,status FROM research_jobs WHERE ticker=? AND status IN ('queued','running','retry') ORDER BY created_at DESC LIMIT 1").bind(ticker).first<any>();
   return {...actual,reused:actual?.id!==id};
 }
-const stop=new Set("what why how when where is are was were the a an and or of to for in on at it its this that company please explain tell about did does has have with from their management said say report reports reported".split(" "));
+const stop=new Set("what why how when where is are was were the a an and or of to for in on at it its this that company please explain tell about did does has have with from their management said say report reports reported main according based using use identify evidence gaps preserve explicit disclose discloses disclosed".split(" "));
 export function searchExpression(question:string){
   const words=question.toLowerCase().match(/[a-z][a-z0-9]{1,30}|\d{4}/g)||[];
-  const expansion:Record<string,string[]>={cash:["cash","operating","conversion"],profits:["profit","PAT"],debt:["debt","borrowings","liquidity"],guidance:["guidance","outlook","expect","target"],business:["business","segments","operations"],margins:["margin","profitability"],revenue:["revenue","sales","income"]};
+  const expansion:Record<string,string[]>={cash:["cash","operating","conversion"],profits:["profit","PAT"],debt:["debt","borrowings","liquidity"],guidance:["guidance","outlook","expect","target"],business:["business","businesses","segment","segments","operations"],segments:["segment","segments","segmental"],risks:["risk","risks","exposure"],margins:["margin","profitability"],revenue:["revenue","sales","income"]};
   return [...new Set(words.filter(w=>!stop.has(w)).flatMap(w=>expansion[w]||[w]))].slice(0,16).map(w=>'"'+w.replaceAll('"','')+'"').join(" OR ");
 }
 const needsPeriodCoverage=(question:string)=>/(?:each|every)\s+quarter|(?:across|between|compar\w*)\b.*(?:quarters|years|periods)|(?:guidance|targets?).*(?:calls|quarters)/i.test(question);
+const needsBusinessOverview=(question:string)=>/\bbusiness(?:es)?\b|\bsegments?\b|\b(?:main|principal)\s+(?:services|products?|categories)/i.test(question);
 export async function searchCorpus(ticker:string,question:string,filters:ResearchFilters={},limit=10):Promise<ResearchPassage[]>{
   const expression=searchExpression(question);if(!expression)return [];
   const types=filters.types||["annual_report","earnings_call"],period=filters.period||null;
@@ -61,7 +62,7 @@ export async function searchCorpus(ticker:string,question:string,filters:Researc
     .bind(match,ticker,types[0]||"",types[1]||types[0]||"",period,period?"%"+period+"%":null,documentId,documentId,count).all<ResearchPassage>();
   const cash=/cash/i.test(question)&&/operating|conversion/i.test(question);
   const periodDocuments=needsPeriodCoverage(question)?(await documents(ticker)).filter(d=>d.active_version&&types.includes(d.type)&&(!period||d.period.includes(period))).slice(0,8):[];
-  const results=await Promise.all([query(expression,80),...(cash?[query('"cash" AND ("operating" OR "conversion")',40),query('"net" AND "cash" AND "operating"',40)]:[]),...periodDocuments.map(d=>query(expression,8,d.id))]);
+  const results=await Promise.all([query(expression,80),...(cash?[query('"cash" AND ("operating" OR "conversion")',40),query('"net" AND "cash" AND "operating"',40)]:[]),...(needsBusinessOverview(question)?[query('("segment" OR "segments" OR "segmental") AND ("business" OR "revenue" OR "operations")',40)]:[]),...(/\brisks?\b/i.test(question)?[query('"risk" OR "risks" OR "exposure"',40)]:[]),...periodDocuments.map(d=>query(expression,8,d.id))]);
   const unique=new Map<string,ResearchPassage>();for(const rows of results.reverse())for(const p of rows.results)if(!unique.has(p.id))unique.set(p.id,p);
   const maximum=Math.max(1,Math.min(12,limit)),selected=rankPassages([...unique.values()],question,Math.max(1,maximum-4));
   // Table headers/units and continuation rows often live in adjacent chunks on
@@ -73,9 +74,13 @@ export async function searchCorpus(ticker:string,question:string,filters:Researc
 export function rankPassages(rows:ResearchPassage[],question:string,limit=10){
   const terms=(question.toLowerCase().match(/[a-z][a-z0-9]{1,30}/g)||[]).filter(w=>!stop.has(w));
   const cash=/cash|conversion/i.test(question),operating=/operating|conversion/i.test(question);
+  const business=needsBusinessOverview(question),risk=/\brisks?\b/i.test(question),latest=Math.max(0,...rows.map(p=>Number(p.period.match(/20\d{2}/)?.[0]||0))),preferRecent=business&&!/20\d{2}/.test(question);
   const scope=/\bconsolidated\b/i.test(question)&&!/\bstandalone\b/i.test(question)?'consolidated':/\bstandalone\b/i.test(question)&&!/\bconsolidated\b/i.test(question)?'standalone':null;
   const scored=rows.map((p,i)=>{const text=p.text.toLowerCase().replace(/\s+/g,' ');let score=terms.reduce((s,w)=>s+(text.includes(w)?4:0),0)+8/(1+i/5);
     if(cash&&operating){if(/cash\s*(?:flows?)?\s*(?:from|generated\s*(?:from|by))?\s*operating\s*activities|operating\s*cash\s*flows?|cash\s*conversion/.test(text))score+=28;if(/net\s+cash\s+(?:flows?\s+)?(?:generated\s+from|provided\s+by|from)\s+operating/.test(text))score+=36;if(/cash\s*flow\s*statement|statement\s*of\s*cash\s*flows/.test(text))score+=8;}
+    if(cash&&operating&&p.text.split(/\r?\n/).some(line=>/net\s+cash\s+(?:flows?\s+)?(?:generated\s+(?:from|by)|provided\s+(?:by|from)|used\s+in|from)\s+operating\s+activities[^\d\n]{0,30}[-\u2212(]?\d/i.test(line.replace(/\s+/g,' '))))score+=24;
+    if(business){if(/segment(?:al)?\s+(?:information|reporting|revenue)|(?:reportable|operating)\s+segments|principal\s+activities/.test(text))score+=48;else if(/business\s+segments/.test(text))score+=12;if(/portfolio\s+of\s+(?:services|products)|(?:product|business)\s+categories|our\s+businesses|business\s+overview/.test(text))score+=16;if(preferRecent&&p.period.includes(String(latest)))score+=6;}
+    if(risk&&/\brisks?\b|\bexposure\b/.test(text)&&terms.some(term=>!['risk','risks','uncertainties','uncertainty'].includes(term)&&text.includes(term)))score+=18;
     if(scope){const heading=(p.heading+' '+p.text.slice(0,120)).toLowerCase();if(new RegExp('\\b'+scope+'\\b').test(heading))score+=20;if(new RegExp('\\b'+(scope==='consolidated'?'standalone':'consolidated')+'\\b').test(heading))score-=20;}
     return {p,score};}).sort((a,b)=>b.score-a.score);
   const selected:ResearchPassage[]=[],pages=new Set<string>(),texts=new Set<string>(),counts=new Map<string,number>(),periods=new Set<string>(),maximum=Math.max(1,Math.min(12,limit));
@@ -103,7 +108,7 @@ export async function evidenceSnapshot(ticker:string,question:string,filters:Res
 }
 export async function questionCacheKey(ticker:string,question:string,filters:ResearchFilters,version:string){
   const normalized={...(filters.period?{period:filters.period}:{}),...(filters.types?{types:[...new Set(filters.types)].sort()}: {})};
-  return hash(JSON.stringify([ticker,question.trim().replace(/\s+/g,' ').toLowerCase(),normalized,version,{prompt:'research-3',retrieval:'fts-neighbours-5',validation:'citations-2',model:(env as unknown as Record<string,unknown>).FINN_PRIVATE_CODEX_MODEL||'Codex'}]));
+  return hash(JSON.stringify([ticker,question.trim().replace(/\s+/g,' ').toLowerCase(),normalized,version,{prompt:'research-3',retrieval:'fts-neighbours-6',validation:'citations-2',model:(env as unknown as Record<string,unknown>).FINN_PRIVATE_CODEX_MODEL||'Codex'}]));
 }
 export async function synchronizeCompany(ticker:string,error:string|null=null){
   const db=database(),docs=await documents(ticker),indexed=docs.filter(d=>d.active_version);

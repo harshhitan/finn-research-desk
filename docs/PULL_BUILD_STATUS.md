@@ -60,7 +60,7 @@ private failure diagnostics, staged indexing recovery and serial question
 checkpoints after conversion. Staged uploads resume only a contiguous ordinal
 prefix; holes force idempotent replay and cannot be published as complete.
 Existing portfolio tests and TypeScript checks pass.
-The 28-case retrieval review set is in `scripts/research/evaluation-cases.json`.
+The 30-case retrieval review set is in `scripts/research/evaluation-cases.json`.
 Run `evaluate.py --output /var/lib/finn-research/evaluation.json` on the VM after
 preparation; it calls the protected read-only evidence check and records source
 IDs, versions, pages, excerpts, latency and scope violations. A nonempty retrieval
@@ -161,7 +161,20 @@ supports turn-scoped `outputSchema`; the shared transport forwards it only for
 jobs supplying that contract. Server quote, number and provenance checks remain
 mandatory. Three transport tests verify schema forwarding, unchanged legacy
 filing behavior and denial of document-induced tool/approval requests. All three
-and sixteen worker tests pass on Linux. A real TCS retry is still required.
+and sixteen worker tests pass on Linux. The real TCS retry passed. HUL also
+returned a supported consolidated segment/category answer and correctly
+separated the discontinued Ice Cream business. Five companies now have accepted
+live answers (Reliance, Coforge, Infosys, TCS and HUL); this does not replace the
+source-review suite or the full completion audit.
+
+The 26-case review excluding NTPC returned no scope violations and empty results
+for all three absent-2099 cases. Manual review found a broad HUL-category
+retrieval miss and incomplete formal-segment context for some business questions.
+`fts-neighbours-6` adds formal-segment/risk candidate queries, prioritizes formal
+group segment notes and actual numeric cash total rows, and modestly prefers
+recent business evidence only when no year was requested. These corrections
+must be reviewed against the real corpus. `evaluate.py --ticker` supports bounded
+company subsets and retains full passages plus original URLs for manual review.
 
 ## Operations and recovery
 

@@ -26,5 +26,7 @@
   {"ticker":"RELIANCE","question":"What was operating cash flow?","filters":{"period":"2099"},"expectEmpty":true},
   {"ticker":"INFY","question":"What revenue guidance was reported?","filters":{"period":"2099"},"expectEmpty":true},
   {"ticker":"TCS","question":"What does the company report about operating cash flow?","filters":{"period":"2025","types":["annual_report"]}},
-  {"ticker":"TCS","question":"What does the company report about operating cash flow?","filters":{"period":"2026","types":["annual_report"]}}
+  {"ticker":"TCS","question":"What does the company report about operating cash flow?","filters":{"period":"2026","types":["annual_report"]}},
+  {"ticker":"COFORGE","question":"What are the main business segments and revenue drivers?"},
+  {"ticker":"COFORGE","question":"What was operating cash flow?","filters":{"period":"2099"},"expectEmpty":true}
 ]
