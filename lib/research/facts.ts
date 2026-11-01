@@ -2,7 +2,7 @@ import {database} from '../repository';
 import {hash,sourceVersion,stamp,parse} from './store';
 import type {ResearchPassage} from './types';
 
-export const factExtractor='financial-tables-3';
+export const factExtractor='financial-tables-4';
 export const financialMetrics={operating_cash_flow:'Net cash from operating activities',investing_cash_flow:'Net cash from investing activities',financing_cash_flow:'Net cash from financing activities',revenue_from_operations:'Revenue from operations',profit_for_year:'Reported profit for the period',profit_before_tax:'Profit before tax'};
 export type FinancialMetric=keyof typeof financialMetrics;
 export type FinancialScope='consolidated'|'standalone';
@@ -27,7 +27,7 @@ export function extractFinancialFacts(passages:ResearchPassage[],metric:Financia
   if(!(cashMetric(metric)?/statement\s+of\s+cash\s*flows?|cash\s*flow\s*statement/i:/statement\s+of\s+profit\s+(?:and|&)\s+loss|income\s+statement|quarterly\s+(?:financial\s+)?(?:results|information)|financial\s+results/i).test(heading+' '+normal)||(!quarterly&&(!/year\s+ended/i.test(normal)||!/(?:31\s*(?:st)?\s*(?:March|Mar\b)|March\s*31)/i.test(normal))))return [];
   const declared=new Set((heading+' '+text.slice(0,700)).match(/\b(?:consolidated|standalone)\b/gi)?.map(s=>s.toLowerCase()));
   if(declared.size!==1||!declared.has(scope))return [];
-  const unitMatches=[...normal.matchAll(/(?:INR|Rs\.?|₹|`|\bH)\s*(?:in\s*)?(crores?|lakhs?|millions?)\b|\bin\s+(crores?|lakhs?|millions?)\s*(?:of\s*)?(?:INR|rupees|₹|`)/gi)].map(m=>(m[1]||m[2]).toLowerCase().replace(/s$/,''));
+  const unitMatches=[...normal.matchAll(/(?:INR|Rs\.?|₹|`|\bH)\s*(?:in\s*)?(crores?|lakhs?|millions?|Mn)\b|\bin\s+(crores?|lakhs?|millions?|Mn)\s*(?:of\s*)?(?:INR|rupees|₹|`)/gi)].map(m=>{const unit=(m[1]||m[2]).toLowerCase().replace(/s$/,'');return unit==='mn'?'million':unit;});
   const unitSet=new Set(unitMatches);if(unitSet.size!==1||/\b(?:US\s*\$|USD|dollars?)\b/i.test(text))return [];
   const unit=[...unitSet][0] as FinancialFact['unit'];
   let periods:{period:string;periodEnd:string;durationMonths:3|12}[]=[];
@@ -77,8 +77,8 @@ export async function getFinancialFacts(ticker:string,metric:FinancialMetric,sco
   const cacheKey='research-facts:'+await hash(JSON.stringify([ticker,metric,scope,version,factExtractor])),cached=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind(cacheKey).first<{data:string}>();
   if(cached){const result=parse<FinancialFacts|null>(cached.data,null);if(result?.sourceVersion===version)return result;}
   const match=cashMetric(metric)?'%net%cash%'+metric.split('_')[0]+'%activities%':metric==='revenue_from_operations'?'%revenue%operations%':metric==='profit_before_tax'?'%profit%before%tax%':'%profit%for%';
-  const statement=cashMetric(metric)?'%statement%cash%flow%':'%statement%profit%loss%';
-  const query=(header:boolean,type:string,count:number)=>db.prepare(`SELECT c.*,d.title,d.period,d.type,d.source_url FROM research_chunks c JOIN research_documents d ON d.id=c.document_id AND d.active_version=c.version_id WHERE c.ticker=? AND d.type=? AND ${header?'(c.text LIKE ? OR c.heading LIKE ?)':'c.text LIKE ?'} ORDER BY CAST(substr(d.period,-4) AS INTEGER) DESC,c.ordinal LIMIT ?`).bind(ticker,type,header?statement:match,...(header?[statement]:[]),count).all<ResearchPassage>();
+  const statement=cashMetric(metric)?'%statement of cash flow%':'%statement of profit and loss%',alternate=cashMetric(metric)?'%cash flow statement%':'%statement of profit & loss%';
+  const query=(header:boolean,type:string,count:number)=>db.prepare(`SELECT c.*,d.title,d.period,d.type,d.source_url FROM research_chunks c JOIN research_documents d ON d.id=c.document_id AND d.active_version=c.version_id WHERE c.ticker=? AND d.type=? AND ${header?'(c.text LIKE ? OR c.heading LIKE ? OR c.text LIKE ? OR c.heading LIKE ?)':'c.text LIKE ?'} ORDER BY CAST(substr(d.period,-4) AS INTEGER) DESC,CASE WHEN c.heading LIKE '%statement of%' THEN 0 WHEN c.text LIKE '%\nConsolidated Statement%' OR c.text LIKE '%\nStandalone Statement%' THEN 1 ELSE 2 END,c.ordinal LIMIT ?`).bind(ticker,type,header?statement:match,...(header?[statement,alternate,alternate]:[]),count).all<ResearchPassage>();
   const [headers,annualRows,callHeaders,callRows]=await Promise.all([query(true,'annual_report',20),query(false,'annual_report',24),query(true,'earnings_call',12),query(false,'earnings_call',24)]);
   // Narrative mentions in calls cannot consume the annual statement budget.
   // Header-first candidates also find a total in a later chunk of the same page.
