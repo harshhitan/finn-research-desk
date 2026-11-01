@@ -13,7 +13,7 @@ for(const n of modules){
   await fs.writeFile(moduleUrl(n),js);
 }
 const sqlite=new DatabaseSync(':memory:');
-for(const migration of ['0000_common_hydra.sql','0001_massive_bullseye.sql'])sqlite.exec(await fs.readFile(new URL('drizzle/'+migration,root),'utf8'));
+for(const migration of (await fs.readdir(new URL('drizzle/',root))).filter(n=>n.endsWith('.sql')).sort())sqlite.exec(await fs.readFile(new URL('drizzle/'+migration,root),'utf8'));
 const binding={prepare(sql){let values=[];return {bind(...v){values=v;return this;},async run(){return {meta:{changes:Number(sqlite.prepare(sql).run(...values).changes)}};},async first(){return sqlite.prepare(sql).get(...values)||null;},async all(){return {results:sqlite.prepare(sql).all(...values)};}};},async batch(list){sqlite.exec('BEGIN');try{const result=[];for(const s of list)result.push(await s.run());sqlite.exec('COMMIT');return result;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
 const files=new Map(),bucket={async put(key,body){files.set(key,new Uint8Array(await new Response(body).arrayBuffer()));},async head(key){return files.has(key)?{}:null;},async get(key){return files.has(key)?{body:files.get(key)}:null;}};
 globalThis.__researchEnv={DB:binding,BUCKET:bucket,FINN_MONITOR_JOB_TOKEN:'worker-secret',FINN_PRIVATE_CODEX_OWNER:'alice',FINN_PRIVATE_CODEX_MODEL:'test-model'};
@@ -43,6 +43,11 @@ assert.equal((await store.searchCorpus('TCS','cash conversion')).length,0,'Stage
 assert.equal((await handleResearch(service('document/finish',{...identity,versionId:version.versionId,chunkCount:3}))).status,400,'Partial upload cannot be published');
 await call('document/finish',{...identity,versionId:version.versionId,chunkCount:2});
 const passages=await store.searchCorpus('TCS','cash conversion');assert.equal(passages.length,1);assert.equal(passages[0].page,1);
+const crowded=Array.from({length:12},(_,i)=>({...passages[0],id:'noise'+i,page:8,text:'Cash and financing liabilities borrowings net changes. '+i}));
+const relevant={...passages[0],id:'operating',page:10,text:'Consolidated cash flows from operating activities and cash conversion. Actual reported operating cash generation.'};
+const ranked=store.rankPassages([...crowded,relevant],'What does the company report about operating cash flow and cash conversion?');
+assert.equal(ranked[0].id,'operating','Operating-cash evidence outranks incidental cash mentions');assert.equal(ranked.length,2,'One passage per source page');
+assert.equal(store.annualPeriod('Q2 2026'),'FY2026');assert.equal(store.annualPeriod('2025-26'),'FY2026');
 assert.equal((await store.searchCorpus('RELIANCE','cash conversion')).length,0,'Issuer isolation');
 assert.equal((await store.searchCorpus('TCS','cash',{period:'2025'})).length,0,'Period filtering');
 assert.equal((await store.searchCorpus('TCS','cash',{types:['earnings_call']})).length,0,'Source-type filtering');
@@ -72,10 +77,14 @@ assert.equal(tools.canonicalTicker('tcs.ns'),'TCS');
 const preparation=await store.enqueuePreparation('TCS','alice'),second=(await call('claim')).job;
 assert.equal(second.id,preparation.id);
 const hash2=await store.hash('changed fixture');files.set(`research/${hash2.slice(0,2)}/${hash2}.pdf`,new Uint8Array([1]));
-const v2=await call('document/start',{jobId:second.id,lease:second.lease,document:{...metadata,hash:hash2}});
+const v2=await call('document/start',{jobId:second.id,lease:second.lease,document:{...metadata,hash:hash2,period:'FY2026',title:'Verified cover title',url:'https://www.tcs.com/replacement.pdf'}});
 assert.equal((await store.searchCorpus('TCS','cash'))[0].version_id,version.versionId,'Old working version remains available while replacement is staged');
+assert.equal((await store.searchCorpus('TCS','cash'))[0].source_url,metadata.url,'Staged metadata cannot change a published citation');
 await call('document/chunks',{jobId:second.id,lease:second.lease,versionId:v2.versionId,chunks});
 await call('document/finish',{jobId:second.id,lease:second.lease,versionId:v2.versionId,chunkCount:2});
+assert.equal((await store.documents('TCS')).filter(d=>d.active_version).length,1,'Alternate PDF formats of one fiscal annual report do not inflate coverage');
+assert.equal((await store.searchCorpus('TCS','cash'))[0].period,'FY2026');
+assert.equal((await handleResearch(user('/documents/'+version.documentId+'/original?version='+version.versionId))).status,200,'Historical originals survive supersession');
 const changed=await store.askQuestion('alice','TCS','What is operating cash flow?');assert.notEqual(changed.id,cached.id);assert.notEqual(changed.cached,true);
 // Company onboarding remains available when the downloadable NSE directory is
 // down. Search hints must be followed by a matching linked exchange identity.

@@ -1,0 +1,1 @@
+ALTER TABLE `research_document_versions` ADD `source_metadata` text DEFAULT '{}' NOT NULL;

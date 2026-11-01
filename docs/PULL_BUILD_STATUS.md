@@ -1,34 +1,75 @@
 # Pull research implementation status
 
-The implementation is in progress under the active user goal. Do not mark it
-complete based on unit tests or an empty library screen.
+Active implementation, 1 November 2026. Full completion remains unproven until
+the live model path and final company coverage have been verified.
 
-Implemented source: generic company registry and NSE resolution; six seed
-companies; migration-owned document/version/chunk/job/question tables and FTS5;
-streamed private R2 originals and extracted page artifacts; leased preparation
-and question protocols; internal coverage/search/read tools; atomic index
-publication; question evidence retrieval and source-version cache invalidation;
-bounded model-answer validation; new /research UI with original desk retained at
-/research/reliance and legacy API aliases.
+## Running implementation
 
-The Python VM worker uses Poppler page batches and bounded optional OCR. No MCP,
-local embedding model, Docling or MarkItDown dependency is required. Conversion
-subprocesses have memory/CPU/file-size limits. The systemd service has 192 MiB
-MemoryHigh, 256 MiB MemoryMax, 128 MiB swap limit, one job at a time, one CPU quota
-and an available-memory guard. Model execution is disabled by default and the
-existing sign-out is preserved.
+The owner-private Site has a generic company library, protected APIs, D1 FTS5
+retrieval and R2 PDF/page artifacts. Six seed companies have completed their first
+ingestion: RELIANCE, TCS, INFY, HINDUNILVR, LT and NTPC. The separate VM service
+`finn-research.service` runs outbound only, with no MCP, inbound server or
+personal-computer dependency. New ticker discovery uses the NSE directory, with
+a cached Screener lookup and matching linked NSE identity when NSE is unavailable.
+The old Reliance desk and saved research remain available.
 
-Evidence so far: real 360-page TCS annual report processed completely on the VM
-in about 5.1 seconds, with 26.1 MiB parent and 20.8 MiB child peak RSS. Eight Linux
-worker tests pass. Research protocol/SQLite/FTS tests and existing portfolio
-tests pass; type checks and an initial production build pass. Local migration
-has been applied. Local preview is running at http://127.0.0.1:5173/research.
+The worker uses standard-library Python, Poppler page batches and optional bounded
+Tesseract OCR. Heavy layout models and embedding services are unnecessary for
+this VM. MemoryHigh is 192 MiB, MemoryMax 256 MiB, swap maximum 128 MiB, CPU quota
+one CPU, and one preparation job runs at a time. Low available memory defers work.
+The first six-job run had zero service restarts and a 194 MiB cgroup peak (includes
+conversion subprocesses); the 360-page TCS benchmark took 5.1 seconds for text
+extraction with 26.1 MiB parent and 20.8 MiB child peak RSS.
 
-Still required: finish real-source selection checks; publish current source and
-R2/schema changes; install/enable protected service; bootstrap and verify all six
-company libraries with actual documents; exercise an unseeded ticker; verify
-search/evidence/caching/recovery and mobile UI against real data; review resource
-limits and observed usage under service; verify model answer path with authorised
-model access (currently deliberately signed out); record deployment, tests,
-coverage gaps and operations/rollback instructions. Do not restore authentication
-without the owner taking the required sign-in action.
+## Data-quality corrections under verification
+
+The first live inspection found alternate PDF formats counted as two report
+years, neighbouring link context leaking into fiscal periods, stale Infosys
+annual selection, and old NTPC call filenames ranked as current. Parser v2 reads
+periods from the document opening, prioritises explicit source years, counts
+distinct verified periods, excludes annual investor meetings and recordings,
+and publishes annual reports by fiscal year. Immutable per-version metadata is
+staged before atomic publication. Historical originals survive supersession.
+Successful v2 preparation retires the old v1 selection from current retrieval.
+
+Retrieval filters company/type/year before searching, reranks operating-cash
+evidence and limits repeated pages/documents. Model answers must supply exact
+quotes and known passage IDs; unsupported numerical claims are rejected.
+Question caches include the current source-version hash. Failed inference needs
+explicit retry and never repeats automatically.
+
+## Validation
+
+Research protocol tests cover authorization, leases/replay, original storage,
+atomic publication and metadata, annual alias retirement, historical PDFs,
+issuer/type/year filtering, retrieval ranking/diversity, model-off evidence,
+answer/citation validation, caching and directory fallback. Nine Linux worker
+tests cover URL, memory, document, period, conversion and disabled-model guards.
+Existing portfolio tests and TypeScript checks pass.
+
+Still required: verify corrected live coverage and useful evidence for all six;
+exercise real unseeded onboarding; inspect responsive UI and originals; verify
+live model inference with the owner's authorized sign-in. Model execution remains
+explicitly disabled and `/home/azureuser/.codex` is inaccessible to this service.
+No authentication has been restored.
+
+## Operations and recovery
+
+On the VM, inspect `systemctl status finn-research.service` and
+`journalctl -u finn-research.service`. Configuration is read from the existing
+owner-only `/home/azureuser/finn-personal/config.json`; never copy its token into
+logs, command arguments, source or documentation. State/cache is under
+`/var/lib/finn-research`; originals and page maps persist in R2. Cache is bounded
+to 2 GiB. Document leases recover after ten minutes and allow at most two attempts.
+Refresh from a company's Prepare documents button. The protected worker bootstrap
+also accepts `refresh: true` for the six seed companies, deduplicating active jobs.
+
+Stop/start only `finn-research.service` to pause/resume ingestion. The separate
+`finn-collector.timer` remains the ordinary data collector; the old model worker
+and cloud monitoring automation remain disabled/paused. Never enable model access
+or remove the credential-path restriction without the owner's sign-in action.
+
+Deploy through the Sites source workflow and preserve owner-only access. Schema
+migrations are append-only; 0001 contains FTS5 and preparation deduplication, and
+0002 adds per-version source metadata. Application rollback must retain these
+tables and R2 artifacts. Do not drop the database or rewrite applied migrations.

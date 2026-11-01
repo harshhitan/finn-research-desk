@@ -10,6 +10,17 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_period_is_read_from_document_not_neighbouring_link(self):
+        self.assertEqual(worker.verified_period('annual_report','Reliance Industries Integrated Annual Report 2025-26 Contents 2024-25'),'FY2026')
+        self.assertEqual(worker.verified_period('annual_report','Annual Report 2026'),'FY2026')
+        self.assertEqual(worker.verified_period('annual_report','A report without a cover date'),'Period unverified')
+        self.assertEqual(worker.verified_period('earnings_call','TCS Q2 FY2027 earnings conference call transcript'),'Q2 FY2027')
+        self.assertEqual(worker.verified_period('earnings_call','Infosys Q4 2025-26 conference call'),'Q4 FY2026')
+        self.assertEqual(worker.verified_period('earnings_call','RIL Q1 FY2026 - 2027 Media & Analyst Call Transcript'),'Q1 FY2027')
+        self.assertEqual(worker.verified_period('earnings_call','Transcript of the Earnings Call for the quarter ended 30th June, 2026'),'Q1 FY2027')
+        self.assertEqual(worker.verified_period('earnings_call','Company quarterly-results/2026-2027/q2.html'),'Q2 FY2027')
+        self.assertEqual(worker.document_period('https://issuer.test/infosys-ar-26.pdf','','Reports 2020'),'2026')
+
     def test_document_types_exclude_presentations_and_summaries(self):
         self.assertEqual(worker.document_kind('https://issuer.test/call.pdf','Transcript','Concall'), 'earnings_call')
         self.assertEqual(worker.document_kind('https://issuer.test/annual-report-2026.pdf','Annual report'), 'annual_report')

@@ -15,6 +15,13 @@
       "when": 1793504141867,
       "tag": "0001_massive_bullseye",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793523976457,
+      "tag": "0002_good_dracula",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import {seedResearchCompanies,type ResearchCompany,type ResearchDocument,type Re
 export const stamp=()=>new Date().toISOString();
 export async function hash(value:string){return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)))).map(x=>x.toString(16).padStart(2,"0")).join("");}
 export function parse<T>(value:string|null|undefined,fallback:T):T{try{return value?JSON.parse(value):fallback;}catch{return fallback;}}
+export function annualPeriod(value:string){const range=value.match(/(20\d{2})\s*[-–/]\s*(?:20)?(\d{2})/);if(range&&Number(range[1])+1===2000+Number(range[2]))return 'FY20'+range[2];const year=value.match(/20\d{2}/);return year?'FY'+year[0]:null;}
 export async function seedResearch(){
   const db=database(),now=stamp();
   await db.batch(seedResearchCompanies.map(c=>db.prepare("INSERT INTO research_companies(ticker,name,isin,sources,status,created_at,updated_at) VALUES(?,?,?,?,'registered',?,?) ON CONFLICT(ticker) DO NOTHING").bind(c.ticker,c.name,c.isin,JSON.stringify(c.sources),now,now)));
@@ -21,7 +22,7 @@ export async function companies(){
   return result.results.map(c=>({...c,sources:parse(c.sources,[])})) as ResearchCompany[];
 }
 export async function documents(ticker:string){
-  return (await database().prepare("SELECT d.*,v.page_count,v.readable_pages,v.chunk_count FROM research_documents d LEFT JOIN research_document_versions v ON v.id=d.active_version WHERE d.ticker=? ORDER BY d.period DESC,d.type,d.title").bind(ticker).all<ResearchDocument>()).results;
+  return (await database().prepare("SELECT d.*,v.page_count,v.readable_pages,v.chunk_count FROM research_documents d LEFT JOIN research_document_versions v ON v.id=d.active_version WHERE d.ticker=? AND d.status!='superseded' ORDER BY d.period DESC,d.type,d.title").bind(ticker).all<ResearchDocument>()).results;
 }
 export async function coverage(ticker:string){
   const c=await company(ticker);if(!c)throw new Error("Unknown research company");
@@ -41,7 +42,7 @@ export async function enqueuePreparation(ticker:string,owner:string){
   const actual=await db.prepare("SELECT id,status FROM research_jobs WHERE ticker=? AND status IN ('queued','running','retry') ORDER BY created_at DESC LIMIT 1").bind(ticker).first<any>();
   return {...actual,reused:actual?.id!==id};
 }
-const stop=new Set("what why how when where is are was were the a an and or of to for in on at it its this that company please explain tell about did does has have with from their management said say".split(" "));
+const stop=new Set("what why how when where is are was were the a an and or of to for in on at it its this that company please explain tell about did does has have with from their management said say report reports reported".split(" "));
 export function searchExpression(question:string){
   const words=question.toLowerCase().match(/[a-z][a-z0-9]{1,30}|\d{4}/g)||[];
   const expansion:Record<string,string[]>={cash:["cash","operating","conversion"],profits:["profit","PAT"],debt:["debt","borrowings","liquidity"],guidance:["guidance","outlook","expect","target"],business:["business","segments","operations"],margins:["margin","profitability"],revenue:["revenue","sales","income"]};
@@ -55,8 +56,18 @@ export async function searchCorpus(ticker:string,question:string,filters:Researc
     JOIN research_documents d ON d.id=c.document_id AND d.active_version=c.version_id
     WHERE research_chunk_fts MATCH ? AND c.ticker=? AND d.type IN (?,?)
     AND (? IS NULL OR d.period LIKE ?) ORDER BY bm25(research_chunk_fts) LIMIT ?`)
-    .bind(expression,ticker,types[0]||"",types[1]||types[0]||"",period,period?"%"+period+"%":null,Math.max(1,Math.min(12,limit))).all<ResearchPassage>();
-  return rows.results;
+    .bind(expression,ticker,types[0]||"",types[1]||types[0]||"",period,period?"%"+period+"%":null,80).all<ResearchPassage>();
+  return rankPassages(rows.results,question,limit);
+}
+export function rankPassages(rows:ResearchPassage[],question:string,limit=10){
+  const terms=(question.toLowerCase().match(/[a-z][a-z0-9]{1,30}/g)||[]).filter(w=>!stop.has(w));
+  const cash=/cash|conversion/i.test(question),operating=/operating|conversion/i.test(question);
+  const scored=rows.map((p,i)=>{const text=p.text.toLowerCase().replace(/\s+/g,' ');let score=terms.reduce((s,w)=>s+(text.includes(w)?4:0),0)+8/(1+i/5);
+    if(cash&&operating){if(/cash\s*(?:flows?)?\s*(?:from|generated\s*(?:from|by))?\s*operating\s*activities|operating\s*cash\s*flows?|cash\s*conversion/.test(text))score+=28;if(/cash\s*flow\s*statement|statement\s*of\s*cash\s*flows/.test(text))score+=8;}
+    return {p,score};}).sort((a,b)=>b.score-a.score);
+  const selected:ResearchPassage[]=[],pages=new Set<string>(),texts=new Set<string>(),counts=new Map<string,number>();
+  for(const {p} of scored){const page=p.document_id+':'+p.page,key=p.text.replace(/\s+/g,' ').slice(0,400);if(pages.has(page)||texts.has(key)||(counts.get(p.document_id)||0)>=4)continue;selected.push(p);pages.add(page);texts.add(key);counts.set(p.document_id,(counts.get(p.document_id)||0)+1);if(selected.length>=Math.max(1,Math.min(12,limit)))break;}
+  return selected;
 }
 export async function readPassages(ticker:string,ids:string[]):Promise<ResearchPassage[]>{
   if(!ids.length)return [];

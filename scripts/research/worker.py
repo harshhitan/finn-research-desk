@@ -30,8 +30,8 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.cozyjay15.chatgpt.site'
-VERSION = 'research-1'
-PARSER = 'poppler-layout-pages-v1'
+VERSION = 'research-2'
+PARSER = 'poppler-layout-pages-v2'
 MAX_PDF = 64 * 1024 * 1024
 MAX_HTML = 3 * 1024 * 1024
 USER_AGENT = 'Mozilla/5.0 (compatible; FINNResearch/1.0; primary-document research)'
@@ -139,8 +139,12 @@ def document_kind(url, label='', context=''):
         return None
     if re.search(r'\bppt\b|presentation|fact.?sheet|ai.?summary|annual.?general.?meeting|\bagm\b', value):
         return None
+    if re.search(r'annual\s+analysts|institutional\s+investors\s+meet|audio.?video|audio\s+recording', value):
+        return None
     if re.search(r'transcript|concall|conference.?call|earnings.?call', value):
         return 'earnings_call'
+    if re.search(r'quarterly[-_/ ]results|form20f|additional[-_ ]information', value):
+        return None
     if re.search(r'annual.?report|integrated.?report|integratedannual|\biar\b|/ar/|\bar[-_ ]?2[0-9]\b', value):
         return 'annual_report'
     # A generic "Download" link needs its surrounding source section.
@@ -155,21 +159,75 @@ def document_kind(url, label='', context=''):
 
 
 def document_period(url, label='', context=''):
-    value = urllib.parse.unquote(label + ' ' + url + ' ' + context)
-    match = re.search(r'(20\d{2})\s*[-–/]\s*(?:20)?(\d{2})', value)
-    year = (match.group(1) + '-' + match.group(2)) if match else None
-    if not year:
-        match = re.search(r'\b(?:FY\s*)?(20\d{2})\b', value, re.I)
-        if match:
-            year = match.group(1)
-    quarter = re.search(r'\bQ([1-4])\b', value, re.I)
-    return ((quarter.group(0).upper() + ' ') if quarter else '') + (year or 'Period unverified')
+    for source in (label,url,context):
+        value = urllib.parse.unquote(source)
+        match = re.search(r'(20\d{2})\s*[-–/]\s*(?:20)?(\d{2})', value)
+        year = (match[1] + '-' + match[2]) if match else None
+        if not year:
+            match = re.search(r'fy\s*[-_\'’]?\s*(20\d{2}|\d{2})\b',value,re.I)
+            year = (match[1] if len(match[1])==4 else '20'+match[1]) if match else None
+        if not year:
+            match = re.search(r'\b(?:FY\s*)?(20\d{2})\b', value, re.I)
+            year = match[1] if match else None
+        if not year:
+            match = re.search(r'\bar[-_ ](\d{2})\b', value, re.I)
+            year = '20'+match[1] if match else None
+        if year:
+            quarter = re.search(r'\bQ([1-4])\b', value, re.I)
+            return ((quarter[0].upper()+' ') if quarter else '')+year
+    return 'Period unverified'
 
 
 def date_hint(value):
     months = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
     found = list(re.finditer(r'\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(?:\d{1,2},?\s+)?(20\d{2})\b',urllib.parse.unquote(value),re.I))
     return int(found[-1].group(2))*12+months[found[-1].group(1)[:3].lower()] if found else 0
+
+
+def verified_period(kind, content):
+    """Use the document's opening pages, never a neighbouring link's context."""
+    value = re.sub(r'\s+', ' ', content[:12000])
+    if kind == 'annual_report':
+        # Prefer a year beside the cover's report title to years in the contents.
+        patterns = [r'(?:annual\s+report|integrated\s+(?:annual\s+)?report)\s*(20\d{2})\s*[-–/]\s*(?:20)?(\d{2})',
+                    r'(20\d{2})\s*[-–/]\s*(?:20)?(\d{2})\s*(?:annual\s+report|integrated)',
+                    r'\b(20\d{2})\s*[-–/]\s*(?:20)?(\d{2})\b']
+        for pattern in patterns:
+            for match in re.finditer(pattern, value, re.I):
+                start, end = int(match[1]), 2000 + int(match[2])
+                if end == start + 1:
+                    return 'FY' + str(end)
+        match = re.search(r'(?:annual\s+report|integrated\s+(?:annual\s+)?report)\s*(20\d{2})\b', value, re.I)
+        if match:
+            return 'FY' + match[1]
+        match = re.search(r'year\s+ended\s+(?:31(?:st)?\s+March|March\s+31(?:st)?)[,\s]+(20\d{2})',value,re.I)
+        if match:
+            return 'FY' + match[1]
+    else:
+        # A quarter is meaningful only together with its fiscal year.
+        opening = value[:6000]
+        match = re.search(r'\bQ([1-4])\s*(?:FY\s*)?(20\d{2})\s*[-–/]\s*(?:20)?(\d{2})\b',opening,re.I)
+        if match and int(match[2])+1==2000+int(match[3]):
+            return 'Q'+match[1]+' FY20'+match[3]
+        month_names='January|February|March|April|May|June|July|August|September|October|November|December'
+        # Issuer filing cover letters identify the reported quarter explicitly.
+        ended = re.search(r'quarter(?:\s+and\s+(?:half|six.month|year|nine.month)(?:\s+year|\s+period)?)?\s+ended\s+(?:\d{1,2}(?:st|nd|rd|th)?\s+)?('+month_names+r')\s*(?:\d{1,2}(?:st|nd|rd|th)?)?[,\s]+(20\d{2})',opening,re.I)
+        if ended:
+            month={name.lower():i+1 for i,name in enumerate(month_names.split('|'))}[ended[1].lower()]
+            if month in (3,6,9,12):
+                return 'Q'+str({3:4,6:1,9:2,12:3}[month])+' FY'+str(int(ended[2])+(month!=3))
+        # Infosys links the exact quarterly results page in its filing letter.
+        match = re.search(r'quarterly-results/(20\d{2})-(20\d{2})/q([1-4])',opening,re.I)
+        if match:
+            return 'Q'+match[3]+' FY'+match[2]
+        match = re.search(r'\bQ([1-4])\s*[-,–:]?\s*(?:FY|fiscal\s*(?:year)?)\s*[-\'’]?\s*(20\d{2}|\d{2})\b', opening,re.I)
+        if not match:
+            match = re.search(r'\bQ([1-4])\s*[-,–:]?\s*(20\d{2})\s*[-–/]\s*(?:20)?(\d{2})\b', opening,re.I)
+            if match:
+                return 'Q' + match[1] + ' FY20' + match[3]
+        if match:
+            return 'Q' + match[1] + ' FY' + (match[2] if len(match[2])==4 else '20'+match[2])
+    return 'Period unverified'
 
 
 def discovery_score(document):
@@ -179,7 +237,20 @@ def discovery_score(document):
     fiscal = re.search(r'(20\d{2})\s*[-/]\s*(?:20)?(\d{2})', value)
     ending = int('20' + fiscal.group(2)) if fiscal else max(years, default=2000)
     q = int(quarter.group(1)) if quarter else 4
-    date = document.get('sortDate') or date_hint(value) or ((ending-(1 if q<4 else 0))*12+{1:6,2:9,3:12,4:3}[q])
+    if document.get('type')=='annual_report':
+        period=document.get('period') or document_period(document['url'],document['title'])
+        fiscal=re.search(r'(20\d{2})\s*[-/]\s*(?:20)?(\d{2})',period)
+        years=re.findall(r'20\d{2}',period)
+        ending=int('20'+fiscal[2]) if fiscal else int(years[0]) if years else 2000
+        date=ending*12+3
+    else:
+        urlvalue=urllib.parse.unquote(document['url'])
+        explicit=re.search(r'fy\s*[-_]?\s*(20\d{2}|\d{2})\b',urlvalue,re.I)
+        if explicit:
+            ending=int(explicit[1]) if len(explicit[1])==4 else 2000+int(explicit[1])
+            date=(ending-(1 if q<4 else 0))*12+{1:6,2:9,3:12,4:3}[q]
+        else:
+            date = document.get('sortDate') or date_hint(value) or ((ending-(1 if q<4 else 0))*12+{1:6,2:9,3:12,4:3}[q])
     return (date, int(quarter.group(1)) if quarter else 0,
             0 if 'bseindia.com' in document['url'] else 1)
 
@@ -236,7 +307,7 @@ def discover(company, progress=lambda *_: None):
         if sum(d['type'] == 'annual_report' for d in have) >= 2 and sum(d['type'] == 'earnings_call' for d in have) >= 6:
             break
     chosen = []
-    for kind, limit in (('annual_report', 6), ('earnings_call', 12)):
+    for kind, limit in (('annual_report', 12), ('earnings_call', 16)):
         ranked = sorted((d for d in documents.values() if d['type'] == kind), key=discovery_score, reverse=True)
         chosen.extend(ranked[:limit])
     return chosen, diagnostics
@@ -436,7 +507,7 @@ class Worker:
                         old.unlink()
             known = self.api('document/known', {'jobId': job['id'], 'lease': job['lease'], 'hash': digest, 'parser': PARSER, 'type': document['type']})
             if known.get('known'):
-                return {'url': document['url'], 'reused': True, 'pages': known['document']['page_count']}
+                return {'url': document['url'], 'period':known['document']['period'], 'reused': True, 'pages': known['document']['page_count']}
             chunks_file, pages_file = directory / 'chunks.jsonl', directory / 'pages.jsonl'
             total, readable, count, identity_text = 0, 0, 0, ''
             with chunks_file.open('w', encoding='utf-8') as chunks, pages_file.open('w', encoding='utf-8') as pages:
@@ -458,15 +529,19 @@ class Worker:
                 raise ResearchError('The extracted document does not establish the selected company identity')
             if document['type']=='earnings_call' and not re.search(r'transcript|moderator|operator|questions?\s*(?:and|&)\s*answers?',identity_text,re.I):
                 raise ResearchError('Document content does not establish an earnings-call transcript')
+            if document['type']=='earnings_call' and re.search(r'annual\s+analysts|institutional\s+investors\s+meet',identity_text[:2500],re.I):
+                raise ResearchError('Annual investor meetings are outside quarterly earnings-call coverage')
             if document['type']=='annual_report' and not re.search(r'annual\s+report|integrated\s+(?:annual\s+)?report',identity_text,re.I):
                 raise ResearchError('Document content does not establish an annual report')
             self.progress(job, 'Storing original and extracted evidence', {'pages': total, 'readablePages': readable, 'chunks': count})
             self.upload(job, digest, pdf, 'pdf')
             self.upload(job, digest, pages_file, 'jsonl')
-            metadata = {**document, 'hash': digest, 'parser': PARSER, 'pages': total, 'readablePages': readable}
+            period = verified_period(document['type'], identity_text)
+            title = job['company']['name'] + ' — ' + ('Annual report' if document['type']=='annual_report' else 'Earnings call') + ' — ' + period
+            metadata = {**document, 'period':period, 'title':title[:400], 'hash': digest, 'parser': PARSER, 'pages': total, 'readablePages': readable}
             prepared = self.api('document/start', {'jobId': job['id'], 'lease': job['lease'], 'document': metadata})
             if prepared.get('reused'):
-                return {'url': document['url'], 'reused': True, 'pages': total}
+                return {'url': document['url'], 'period':period, 'reused': True, 'pages': total}
             batch = []
             with chunks_file.open(encoding='utf-8') as stream:
                 for line in stream:
@@ -478,10 +553,10 @@ class Worker:
                 if batch:
                     self.api('document/chunks', {'jobId': job['id'], 'lease': job['lease'], 'versionId': prepared['versionId'], 'chunks': batch})
             self.api('document/finish', {'jobId': job['id'], 'lease': job['lease'], 'versionId': prepared['versionId'], 'chunkCount': count})
-            return {'url': document['url'], 'pages': total, 'readablePages': readable, 'chunks': count}
+            return {'url': document['url'], 'period':period, 'pages': total, 'readablePages': readable, 'chunks': count}
 
     def prepare(self, job):
-        discovery_path = self.state / ('discovery-' + hashlib.sha256(json.dumps(job['company'],sort_keys=True).encode()).hexdigest() + '.json')
+        discovery_path = self.state / ('discovery-' + hashlib.sha256((VERSION+json.dumps(job['company'],sort_keys=True)).encode()).hexdigest() + '.json')
         if discovery_path.exists() and time.time()-discovery_path.stat().st_mtime<86400:
             discovery = json.loads(discovery_path.read_text())
             candidates, diagnostics = discovery['documents'], discovery['diagnostics']
@@ -490,20 +565,26 @@ class Worker:
             discovery_path.write_text(json.dumps({'documents':candidates,'diagnostics':diagnostics}))
         completed, failures = [], []
         counts = {'annual_report':0,'earnings_call':0}
+        periods = {'annual_report':set(),'earnings_call':set()}
         for i, document in enumerate(candidates):
             if counts[document['type']] >= (2 if document['type']=='annual_report' else 6):
                 continue
             self.progress(job, 'Preparing document ' + str(i + 1) + ' of ' + str(len(candidates)), {'completed': len(completed), 'candidates': len(candidates), 'failures': failures[-8:]})
             try:
-                completed.append(self.process_document(job, document))
-                counts[document['type']] += 1
+                result = self.process_document(job, document)
+                completed.append(result)
+                key = result.get('period','Period unverified')
+                if key != 'Period unverified':
+                    periods[document['type']].add(key)
+                # Unknown periods remain available but never inflate the target.
+                counts[document['type']] = len(periods[document['type']])
             except Exception as error:
                 reason = str(error) if isinstance(error, ResearchError) else type(error).__name__
                 failures.append({'url': document['url'], 'reason': reason[:300]})
-        self.progress(job, 'Recording document coverage', {'completed': len(completed), 'candidates': len(candidates), 'documents': completed, 'failures': failures, 'discoveryDiagnostics': diagnostics[-12:]})
+        self.progress(job, 'Recording document coverage', {'completed': len(completed), 'verifiedPeriods':{k:sorted(v) for k,v in periods.items()}, 'candidates': len(candidates), 'documents': [{**d,'url':d['url'][:180]} for d in completed[-16:]], 'failures': [{**d,'url':d['url'][:180]} for d in failures[-8:]], 'discoveryDiagnostics': [{**d,'url':d['url'][:180]} for d in diagnostics[-6:]]})
         if not completed:
             raise ResearchError('No eligible document could be indexed; inspect discovery/extraction diagnostics')
-        self.api('finish', {'jobId': job['id'], 'lease': job['lease'], 'error': 'Some documents could not be processed; inspect source coverage.' if failures else None})
+        self.api('finish', {'jobId': job['id'], 'lease': job['lease'], 'parser':PARSER, 'error': 'Some documents could not be processed; inspect source coverage.' if failures else None})
 
     def answer(self, question):
         # Reuse the existing restricted, tool-free model transport. Retrieval is

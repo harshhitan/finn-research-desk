@@ -32,6 +32,7 @@ export const researchVersions = sqliteTable("research_document_versions", {
   parser:text("parser").notNull(), artifactKey:text("artifact_key").notNull(), pageCount:integer("page_count").notNull(),
   readablePages:integer("readable_pages").notNull(), chunkCount:integer("chunk_count").notNull(),
   status:text("status").notNull(), createdAt:text("created_at").notNull(),
+  sourceMetadata:text("source_metadata").notNull().default('{}'),
 });
 export const researchChunks = sqliteTable("research_chunks", {
   id:text("id").primaryKey(), versionId:text("version_id").notNull(), documentId:text("document_id").notNull(),
