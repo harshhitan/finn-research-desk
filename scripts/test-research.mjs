@@ -77,6 +77,10 @@ const answer={summary,findings:[{text:summary,citations:[{chunkId:passages[0].id
 assert.equal((await handleResearch(service('question/complete',{id:question.id,lease:'bad',answer}))).status,400);
 assert.throws(()=>store.validateResearchAnswer({...answer,findings:[{...answer.findings[0],citations:[{chunkId:passages[0].id,quote:'fabricated source statement from nowhere'}]}]},passages,'model'));
 assert.throws(()=>store.validateResearchAnswer({...answer,summary:'Operating cash flow was 999 crore.',findings:[{...answer.findings[0],text:'Operating cash flow was 999 crore.'}]},passages,'model'));
+assert.throws(()=>store.validateResearchAnswer({...answer,summary:'Operating cash flow was 200 crore.',findings:[{...answer.findings[0],text:'Operating cash flow was 200 crore.'}]},passages.map(p=>({...p,text:p.text+' Another unrelated figure was 200 crore.'})),'model'),'A number elsewhere in a passage cannot support a quote about a different figure');
+assert.throws(()=>store.validateResearchAnswer({...answer,summary:'Operating cash flow was -100 crore.',findings:[{...answer.findings[0],text:'Operating cash flow was -100 crore.'}]},passages,'model'),'Positive and negative amounts are not interchangeable');
+const negativePassage={...passages[0],text:'The company reports net cash from operating activities of (100) crore.'};const negativeSummary='Operating cash flow was -100 crore in 2026.';
+assert.equal(store.validateResearchAnswer({summary:negativeSummary,findings:[{text:negativeSummary,citations:[{chunkId:negativePassage.id,quote:'net cash from operating activities of (100) crore'}]}],missingEvidence:[]},[negativePassage],'model').summary,negativeSummary,'Accounting parentheses preserve a negative amount and metadata supports the reporting year');
 globalThis.__researchEnv.FINN_PRIVATE_CODEX_MODEL='changed-during-run';
 assert.equal((await handleResearch(service('question/complete',{id:claimed.id,lease:claimed.lease,answer}))).status,400,'A model/configuration change cannot populate the old cache contract');
 globalThis.__researchEnv.FINN_PRIVATE_CODEX_MODEL='test-model';

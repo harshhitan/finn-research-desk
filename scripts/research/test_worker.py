@@ -11,6 +11,13 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_discovery_cache_depends_on_identity_not_progress(self):
+        a={'ticker':'TCS','sources':['https://issuer.test/ir','https://issuer.test/reports'],'status':'preparing','updated_at':'first'}
+        b={**a,'sources':list(reversed(a['sources'])),'status':'ready','updated_at':'later'}
+        self.assertEqual(worker.discovery_cache_key(a),worker.discovery_cache_key(b))
+        self.assertNotEqual(worker.discovery_cache_key(a),worker.discovery_cache_key({**a,'sources':['https://issuer.test/new-ir']}))
+        self.assertNotEqual(worker.discovery_cache_key(a),worker.discovery_cache_key({**a,'ticker':'INFY'}))
+
     def test_model_failure_does_not_abort_document_work(self):
         with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'1'}),patch.object(worker,'available_memory',return_value=300),patch('sys.stdout',new_callable=io.StringIO) as log:
             instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))

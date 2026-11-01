@@ -30,9 +30,10 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.1'
+VERSION = 'research-2.2'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-1'
+DISCOVERY_POLICY = 'primary-links-2'
 MAX_PDF = 64 * 1024 * 1024
 MAX_HTML = 3 * 1024 * 1024
 USER_AGENT = 'Mozilla/5.0 (compatible; FINNResearch/1.0; primary-document research)'
@@ -262,6 +263,11 @@ def discovery_score(document):
             date = document.get('sortDate') or date_hint(value) or ((ending-(1 if q<4 else 0))*12+{1:6,2:9,3:12,4:3}[q])
     return (date, int(quarter.group(1)) if quarter else 0,
             0 if 'bseindia.com' in document['url'] else 1)
+
+
+def discovery_cache_key(company):
+    identity={'ticker':company['ticker'],'sources':sorted(set(company.get('sources') or [])),'policy':DISCOVERY_POLICY}
+    return hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
 
 
 def discover(company, progress=lambda *_: None):
@@ -648,7 +654,7 @@ class Worker:
             return {'url': document['url'], 'period':period, 'pages': total, 'readablePages': readable, 'chunks': count}
 
     def prepare(self, job):
-        discovery_path = self.state / ('discovery-' + hashlib.sha256((VERSION+json.dumps(job['company'],sort_keys=True)).encode()).hexdigest() + '.json')
+        discovery_path = self.state / ('discovery-' + discovery_cache_key(job['company']) + '.json')
         if discovery_path.exists() and time.time()-discovery_path.stat().st_mtime<86400:
             discovery = json.loads(discovery_path.read_text())
             candidates, diagnostics = discovery['documents'], discovery['diagnostics']

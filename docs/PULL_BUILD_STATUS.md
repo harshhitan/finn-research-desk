@@ -54,7 +54,7 @@ explicit retry and never repeats automatically.
 Research protocol tests cover authorization, leases/replay, original storage,
 atomic publication and metadata, annual alias retirement, historical PDFs,
 issuer/type/year filtering, retrieval ranking/diversity, model-off evidence,
-answer/citation validation, caching and directory fallback. Twelve Linux worker
+answer/citation validation, caching and directory fallback. Thirteen Linux worker
 tests cover URL, memory, document, period, conversion and disabled-model guards.
 Existing portfolio tests and TypeScript checks pass.
 The 28-case retrieval review set is in `scripts/research/evaluation-cases.json`.
@@ -72,11 +72,15 @@ Original delivery supports bounded byte ranges and HEAD requests for PDF viewers
 The protected ingestion credential can verify stored originals through the same
 read-only route; it cannot use that exception to read visitor question history.
 
-Still required: verify corrected live coverage and useful evidence for all six;
-exercise real unseeded onboarding; inspect responsive UI and originals; verify
-live model inference with the owner's authorized sign-in. Model execution remains
-explicitly disabled and `/home/azureuser/.codex` is inaccessible to this service.
-No authentication has been restored.
+Still required: verify final corrected coverage and useful evidence for all six
+and complete real model-answer validation. Coforge has published its first report;
+its saved question automatically advanced to waiting_model without a browser poll.
+The original PDF viewer has been visually verified at its cited historical page.
+The owner explicitly authorized on-demand answers and completed VM sign-in.
+Model startup succeeded under a 192 MiB memory cap: 88 MiB child and 20.2 MiB
+parent peak RSS. The configured gpt-6.1-sol model is available. Base installation
+remains model-disabled; the optional model profile permits credential refresh only
+after authorization. No scheduled model monitoring is enabled.
 
 The stricter call policy requires earnings context and dialogue in the PDF, not
 merely a filing letter mentioning a transcript. Analyst days, fireside chats and
@@ -92,6 +96,11 @@ Interactive preparations take priority over background seed refreshes. Publishin
 the first relevant document refreshes waiting questions without a browser poll.
 When explicitly enabled, inference runs between documents and a model failure
 does not abort ingestion. It still requires a separate live authorized model test.
+Answer amounts must appear in the actual cited quotes, with negative signs and
+accounting parentheses preserved. Numbers elsewhere on the same page cannot
+validate a different quoted claim. This is still not a proof of semantic support.
+Discovery cache keys use ticker, sources and policy version; progress/readiness
+timestamps cannot invalidate the daily discovery cache.
 
 ## Operations and recovery
 
@@ -113,8 +122,12 @@ lease while its original service is still running.
 
 Stop/start only `finn-research.service` to pause/resume ingestion. The separate
 `finn-collector.timer` remains the ordinary data collector; the old model worker
-and cloud monitoring automation remain disabled/paused. Never enable model access
-or remove the credential-path restriction without the owner's sign-in action.
+and cloud monitoring automation remain disabled/paused. Install the optional
+`scripts/research/finn-research-model.conf` profile under
+`/etc/systemd/system/finn-research.service.d/` only after owner authorization and
+sign-in. It enables user-requested inference and permits the official credential
+store to refresh, while ProtectHome stays read-only elsewhere. The collector's
+credential-path restriction stays in force. Never print or copy the auth cache.
 
 Deploy through the Sites source workflow and preserve owner-only access. Schema
 migrations are append-only; 0001 contains FTS5 and preparation deduplication, and
