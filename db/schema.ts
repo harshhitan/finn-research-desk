@@ -42,6 +42,7 @@ export const researchChunks = sqliteTable("research_chunks", {
 export const researchJobs = sqliteTable("research_jobs", {
   id:text("id").primaryKey(), ticker:text("ticker").notNull(), owner:text("owner").notNull(), kind:text("kind").notNull(),
   status:text("status").notNull(), stage:text("stage").notNull(), attempts:integer("attempts").notNull().default(0),
+  priority:integer('priority').notNull().default(0),
   lease:text("lease"), leaseUntil:text("lease_until"), progress:text("progress").notNull(), error:text("error"),
   availableAt:text("available_at").notNull(), createdAt:text("created_at").notNull(), updatedAt:text("updated_at").notNull(),
 }, t=>[index("research_jobs_claim").on(t.kind,t.status,t.availableAt)]);

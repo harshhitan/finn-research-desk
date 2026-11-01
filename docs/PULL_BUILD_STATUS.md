@@ -54,7 +54,7 @@ explicit retry and never repeats automatically.
 Research protocol tests cover authorization, leases/replay, original storage,
 atomic publication and metadata, annual alias retirement, historical PDFs,
 issuer/type/year filtering, retrieval ranking/diversity, model-off evidence,
-answer/citation validation, caching and directory fallback. Eleven Linux worker
+answer/citation validation, caching and directory fallback. Twelve Linux worker
 tests cover URL, memory, document, period, conversion and disabled-model guards.
 Existing portfolio tests and TypeScript checks pass.
 The 28-case retrieval review set is in `scripts/research/evaluation-cases.json`.
@@ -88,6 +88,10 @@ and provenance, avoiding a full upload on every refresh. Coverage now exposes
 verified period counts and the latest source-check reasons. A company with
 partially readable documents remains partial, and expired jobs reconcile company
 status rather than leaving an empty library preparing indefinitely.
+Interactive preparations take priority over background seed refreshes. Publishing
+the first relevant document refreshes waiting questions without a browser poll.
+When explicitly enabled, inference runs between documents and a model failure
+does not abort ingestion. It still requires a separate live authorized model test.
 
 ## Operations and recovery
 
@@ -114,5 +118,6 @@ or remove the credential-path restriction without the owner's sign-in action.
 
 Deploy through the Sites source workflow and preserve owner-only access. Schema
 migrations are append-only; 0001 contains FTS5 and preparation deduplication, and
-0002 adds per-version source metadata. Application rollback must retain these
+0002 adds per-version source metadata; 0003 adds preparation priority and promotes
+existing waiting user questions. Application rollback must retain these
 tables and R2 artifacts. Do not drop the database or rewrite applied migrations.

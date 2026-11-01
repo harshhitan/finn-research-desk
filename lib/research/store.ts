@@ -30,15 +30,15 @@ export async function coverage(ticker:string){
   const [docs,jobs]=await Promise.all([documents(ticker),database().prepare("SELECT id,kind,status,stage,progress,error,created_at,updated_at FROM research_jobs WHERE ticker=? ORDER BY created_at DESC LIMIT 6").bind(ticker).all<any>()]);
   return {company:c,documents:docs,jobs:jobs.results.map(j=>({...j,progress:parse(j.progress,{})})),counts:{annuals:docs.filter(d=>d.type==="annual_report"&&d.active_version).length,transcripts:docs.filter(d=>d.type==="earnings_call"&&d.active_version).length,chunks:docs.reduce((sum,d)=>sum+(d.chunk_count||0),0)},target:{annuals:2,transcripts:6}};
 }
-export async function enqueuePreparation(ticker:string,owner:string){
+export async function enqueuePreparation(ticker:string,owner:string,priority=10){
   const db=database(),prior=await db.prepare("SELECT id,status FROM research_jobs WHERE ticker=? AND kind='prepare' AND status IN ('queued','running','retry') ORDER BY created_at DESC LIMIT 1").bind(ticker).first<{id:string;status:string}>();
-  if(prior)return {...prior,reused:true};
+  if(prior){await db.prepare('UPDATE research_jobs SET priority=MAX(priority,?) WHERE id=?').bind(priority,prior.id).run();return {...prior,reused:true};}
   const pending=await db.prepare("SELECT COUNT(*) AS n FROM research_jobs WHERE status IN ('queued','running','retry')").first<{n:number}>();
   if((pending?.n||0)>=12)throw new Error("Research preparation queue is full. Please wait for current companies to finish.");
   const id=crypto.randomUUID(),now=stamp();
   // A unique partial index also prevents two concurrent requests from starting
   // duplicate preparation for one company.
-  await db.prepare("INSERT OR IGNORE INTO research_jobs(id,ticker,owner,kind,status,stage,progress,available_at,created_at,updated_at) VALUES(?,?,?,'prepare','queued','Waiting for document worker','{}',?,?,?)").bind(id,ticker,owner,now,now,now).run();
+  await db.prepare("INSERT OR IGNORE INTO research_jobs(id,ticker,owner,kind,status,stage,progress,available_at,created_at,updated_at,priority) VALUES(?,?,?,'prepare','queued','Waiting for document worker','{}',?,?,?,?)").bind(id,ticker,owner,now,now,now,priority).run();
   await db.prepare("UPDATE research_companies SET status=CASE WHEN EXISTS(SELECT 1 FROM research_documents WHERE ticker=? AND active_version IS NOT NULL) THEN status ELSE 'preparing' END,error=NULL,updated_at=? WHERE ticker=?").bind(ticker,now,ticker).run();
   const actual=await db.prepare("SELECT id,status FROM research_jobs WHERE ticker=? AND status IN ('queued','running','retry') ORDER BY created_at DESC LIMIT 1").bind(ticker).first<any>();
   return {...actual,reused:actual?.id!==id};

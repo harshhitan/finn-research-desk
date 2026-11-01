@@ -660,6 +660,9 @@ class Worker:
         periods = {'annual_report':set(),'earnings_call':set()}
         for i, document in enumerate(candidates):
             self.directory_lookup()
+            if self.model_enabled:
+                self.progress(job,'Checking saved research questions',{'completed':len(completed),'candidates':len(candidates)})
+                self.answer_waiting_question()
             if counts[document['type']] >= (2 if document['type']=='annual_report' else 6):
                 continue
             self.progress(job, 'Preparing document ' + str(i + 1) + ' of ' + str(len(candidates)), {'completed': len(completed), 'candidates': len(candidates), 'failures': failures[-8:]})
@@ -709,14 +712,8 @@ class Worker:
             return
         if self.directory_lookup():
             return
-        if self.model_ready():
-            question = self.api('question/claim', {}).get('question')
-            if question:
-                try:
-                    self.answer(question)
-                except Exception:
-                    self.api('question/failed', {'id': question['id'], 'lease': question['lease']})
-                return
+        if self.answer_waiting_question():
+            return
         job = self.api('claim', {}).get('job')
         if job:
             try:
@@ -726,6 +723,26 @@ class Worker:
                 reason = str(error) if isinstance(error, ResearchError) else type(error).__name__
                 self.api('failed', {'jobId': job['id'], 'lease': job['lease'], 'error': reason[:500], 'exclusions':getattr(error,'exclusions',[])})
                 print(json.dumps({'ticker': job['ticker'], 'status': 'preparation_error', 'reason': reason[:300]}), flush=True)
+
+    def answer_waiting_question(self):
+        # A model failure must not abort document preparation. Calls happen only
+        # between documents, after converters/uploads have released their work.
+        if not self.model_enabled or available_memory()<220:
+            return False
+        question=None
+        try:
+            if not self.model_ready():
+                return False
+            question=self.api('question/claim',{}).get('question')
+            if not question:
+                return False
+            self.answer(question)
+        except Exception:
+            if question:
+                with contextlib.suppress(Exception):
+                    self.api('question/failed',{'id':question['id'],'lease':question['lease']})
+            print(json.dumps({'status':'model_request_deferred_or_failed','evidenceRetained':True}),flush=True)
+        return question is not None
 
 
 def main():

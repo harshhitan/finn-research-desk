@@ -58,8 +58,12 @@ export async function researchWorkerAction(action:string,body:any){
   }
   if(action==="bootstrap"){
     await seedResearch();const jobs=[];
-    for(const seed of seedResearchCompanies){const c=await company(seed.ticker);if(body.reconcile===true&&c&&c.status!=='registered')await synchronizeCompany(c.ticker,c.error);if(c?.status==="registered"||body.refresh===true)jobs.push(await enqueuePreparation(seed.ticker,owner));}
+    for(const seed of seedResearchCompanies){const c=await company(seed.ticker);if(body.reconcile===true&&c&&c.status!=='registered')await synchronizeCompany(c.ticker,c.error);if(c?.status==="registered"||body.refresh===true)jobs.push(await enqueuePreparation(seed.ticker,owner,0));}
     return {jobs,seedCount:seedResearchCompanies.length};
+  }
+  if(action==='prepare'){
+    if(!text(body.ticker,25)||!await company(body.ticker))throw new Error('Choose a registered company for preparation');
+    return {job:await enqueuePreparation(body.ticker,owner,body.background===true?0:10)};
   }
   if(action==="claim"){
     // One preparation job at a time, with recovery after process/VM loss.
@@ -67,7 +71,7 @@ export async function researchWorkerAction(action:string,body:any){
     for(const ticker of new Set(expired.results.map(j=>j.ticker)))await synchronizeCompany(ticker,'Document worker lease expired. Completed evidence is retained; inspect the preparation job.');
     if(await db.prepare("SELECT id FROM research_jobs WHERE status='running' AND lease_until>? LIMIT 1").bind(now).first())return {job:null};
     const lease=crypto.randomUUID();
-    const job=await db.prepare("UPDATE research_jobs SET status='running',stage='Discovering primary documents',lease=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=(SELECT id FROM research_jobs WHERE kind='prepare' AND status IN ('queued','retry') AND available_at<=? ORDER BY created_at LIMIT 1) AND status IN ('queued','retry') AND NOT EXISTS(SELECT 1 FROM research_jobs WHERE status='running') RETURNING *").bind(lease,new Date(Date.now()+600000).toISOString(),now,now).first<any>();
+    const job=await db.prepare("UPDATE research_jobs SET status='running',stage='Discovering primary documents',lease=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=(SELECT id FROM research_jobs WHERE kind='prepare' AND status IN ('queued','retry') AND available_at<=? ORDER BY priority DESC,created_at LIMIT 1) AND status IN ('queued','retry') AND NOT EXISTS(SELECT 1 FROM research_jobs WHERE status='running') RETURNING *").bind(lease,new Date(Date.now()+600000).toISOString(),now,now).first<any>();
     return {job:job?{...job,company:await company(job.ticker)}:null};
   }
   if(action==='maintenance/yield'){
@@ -84,7 +88,7 @@ export async function researchWorkerAction(action:string,body:any){
     // repeated, since that could consume subscription usage twice.
     await db.prepare("UPDATE research_questions SET status='error',error='Model worker stopped before a verified answer. Retry explicitly.',lease=NULL,lease_until=NULL,updated_at=? WHERE status='running' AND lease_until<?").bind(now,now).run();
     if(await db.prepare("SELECT id FROM research_questions WHERE status='running' LIMIT 1").first())return {question:null};
-    const candidates=await db.prepare("SELECT id FROM research_questions WHERE owner=? AND status IN ('waiting_model','queued') ORDER BY created_at LIMIT 5").bind(owner).all<{id:string}>();
+    const candidates=await db.prepare("SELECT id FROM research_questions WHERE owner=? AND (status IN ('waiting_model','queued') OR (status='waiting_documents' AND EXISTS(SELECT 1 FROM research_documents d WHERE d.ticker=research_questions.ticker AND d.active_version IS NOT NULL))) ORDER BY updated_at,created_at LIMIT 5").bind(owner).all<{id:string}>();
     for(const q of candidates.results)await refreshQuestion(q.id,owner);
     const lease=crypto.randomUUID();
     const q=await db.prepare("UPDATE research_questions SET status='running',lease=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=(SELECT id FROM research_questions WHERE owner=? AND status='queued' AND attempts=0 ORDER BY created_at LIMIT 1) AND status='queued' AND NOT EXISTS(SELECT 1 FROM research_questions WHERE status='running') RETURNING *").bind(lease,new Date(Date.now()+240000).toISOString(),now,owner).first<any>();
@@ -151,6 +155,9 @@ export async function researchWorkerAction(action:string,body:any){
     const title=metadata.title||current.title,period=metadata.period||current.period,url=metadata.url||current.source_url;
     const prior=await documents(job.ticker),aliases=prior.filter(d=>d.id!==current.id&&d.type===current.type&&(d.source_url===url||(current.type==='annual_report'&&/^FY20\d{2}$/.test(period)&&annualPeriod(d.period)===period)));
     await db.batch([db.prepare("UPDATE research_document_versions SET chunk_count=?,status=? WHERE id=?").bind(body.chunkCount,status,version.id),db.prepare("UPDATE research_documents SET active_version=?,status=?,title=?,period=?,source_url=?,error=NULL,updated_at=? WHERE id=?").bind(version.id,status,title,period,url,now,version.document_id),...aliases.map(d=>db.prepare("UPDATE research_documents SET active_version=NULL,status='superseded',updated_at=? WHERE id=?").bind(now,d.id))]);
+    await synchronizeCompany(job.ticker);
+    const waiting=await db.prepare("SELECT id,owner FROM research_questions WHERE ticker=? AND status='waiting_documents' ORDER BY updated_at LIMIT 5").bind(job.ticker).all<{id:string;owner:string}>();
+    for(const q of waiting.results)await refreshQuestion(q.id,q.owner);
     return {accepted:true,status};
   }
   if(action==="finish"||action==="failed"){
