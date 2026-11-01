@@ -71,10 +71,10 @@ def source_open(url, timeout=30):
             code, location = error.code, error.headers.get('Location')
             error.close()
             if code in (301, 302, 303, 307, 308) and location:
-                url = urllib.parse.urljoin(url, location)
+                url = urllib.parse.quote(urllib.parse.urljoin(url, location),safe=":/?#[]@!$&'()*+,;=%-._~")
                 continue
             raise ResearchError('Source HTTP ' + str(code)) from None
-        except (urllib.error.URLError, TimeoutError, ConnectionError):
+        except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.InvalidURL):
             raise ResearchError('Source connection failed') from None
     raise ResearchError('Source redirect limit exceeded')
 
@@ -171,7 +171,7 @@ def document_period(url, label='', context=''):
             year = match[1] if match else None
         if not year:
             match = re.search(r'\bar[-_ ](\d{2})\b', value, re.I)
-            year = '20'+match[1] if match else None
+            year = (('19' if int(match[1])>=70 else '20')+match[1]) if match else None
         if year:
             quarter = re.search(r'\bQ([1-4])\b', value, re.I)
             return ((quarter[0].upper()+' ') if quarter else '')+year
@@ -481,6 +481,52 @@ class Worker:
             self.heartbeat()
             self.last_progress = time.monotonic()
 
+    def directory_lookup(self):
+        lookup = self.api('directory/claim', {}).get('lookup')
+        if not lookup:
+            return False
+        matches, failed = [], False
+        try:
+            query = str(lookup['query'])[:100]
+            with source_open('https://www.screener.in/api/company/search/?q='+urllib.parse.quote(query,safe='')+'&v=3&fts=1',15) as response:
+                raw=response.read(100001)
+                if len(raw)>100000:
+                    raise ResearchError('Company search exceeds size limit')
+                entries=json.loads(raw)
+            if not isinstance(entries,list):
+                raise ResearchError('Company search returned invalid results')
+            for entry in entries[:8]:
+                path=entry.get('url','')
+                match=re.fullmatch(r'/company/([A-Z0-9&-]{1,25})/(?:consolidated/)?',path)
+                if not match:
+                    continue
+                ticker=match[1]
+                try:
+                    with source_open('https://www.screener.in'+path,10) as response:
+                        raw=response.read(MAX_HTML+1)
+                        if len(raw)>MAX_HTML:
+                            continue
+                        html=raw.decode('utf-8','replace')
+                    name=re.search(r'<h1\b[^>]*>([\s\S]*?)</h1>',html,re.I)
+                    name=unescape(re.sub('<[^>]*>',' ',name[1])).strip() if name else ''
+                    parser=Links('https://www.screener.in'+path)
+                    parser.feed(html)
+                    if not name or len(name)>200 or not any(urllib.parse.urlsplit(url).hostname=='www.nseindia.com' and urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get('symbol')==[ticker] for url,_,_ in parser.links):
+                        continue
+                    sources=[]
+                    for url,label,_ in parser.links:
+                        parsed=urllib.parse.urlsplit(url)
+                        host=(parsed.hostname or '').removeprefix('www.')
+                        if parsed.scheme=='https' and parsed.path in ('','/') and host and not re.search(r'screener|nseindia|bseindia|linkedin|twitter|facebook|youtube|instagram|x\.com',host) and (host in label.lower() or re.search(r'company website|^website$',label.strip(),re.I)):
+                            sources.append(url)
+                    matches.append({'ticker':ticker,'name':name,'isin':'','sources':list(dict.fromkeys(sources))[:3]})
+                except ResearchError:
+                    continue
+        except Exception:
+            failed=True
+        self.api('directory/complete', {**lookup,'matches':matches,'failed':failed})
+        return True
+
     def process_document(self, job, document):
         with tempfile.TemporaryDirectory(prefix='document-', dir=self.state) as temporary:
             directory = Path(temporary)
@@ -567,6 +613,7 @@ class Worker:
         counts = {'annual_report':0,'earnings_call':0}
         periods = {'annual_report':set(),'earnings_call':set()}
         for i, document in enumerate(candidates):
+            self.directory_lookup()
             if counts[document['type']] >= (2 if document['type']=='annual_report' else 6):
                 continue
             self.progress(job, 'Preparing document ' + str(i + 1) + ' of ' + str(len(candidates)), {'completed': len(completed), 'candidates': len(candidates), 'failures': failures[-8:]})
@@ -611,6 +658,8 @@ class Worker:
         self.heartbeat()
         if available_memory() < 180:
             print(json.dumps({'status': 'deferred', 'reason': 'low_memory', 'availableMb': available_memory()}), flush=True)
+            return
+        if self.directory_lookup():
             return
         if self.model_ready():
             question = self.api('question/claim', {}).get('question')

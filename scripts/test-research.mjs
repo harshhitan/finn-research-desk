@@ -99,6 +99,20 @@ assert.equal((await tools.searchCompanies('Coforge'))[0].ticker,'COFORGE');
 assert.equal((await tools.searchCompanies('Coforge')).length,1);assert.equal(searchFetches,1,'Directory search hints are cached');
 const newCompany=await tools.resolveCompany('COFORGE');assert.equal(newCompany.name,'Coforge Ltd');assert.equal(newCompany.isin,'','An unavailable ISIN is not invented');assert.deepEqual(newCompany.sources,['https://www.coforge.com/']);
 await assert.rejects(()=>tools.resolveCompany('WRONG'),/matching linked NSE identity/);
+
+// A hosted-source outage queues a bounded lookup on the VM, then reuses its
+// verified identity without calling the unavailable sources on preparation.
+globalThis.fetch=async()=>{throw new Error('hosted egress unavailable');};
+assert.deepEqual(await tools.searchCompanies('Persistent Systems'),[]);
+assert.equal(await tools.directoryPending('Persistent Systems'),true);
+const lookup=(await call('directory/claim')).lookup;assert.equal(lookup.query,'Persistent Systems');
+assert.equal((await call('directory/claim')).lookup,null,'A claimed lookup is not duplicated');
+assert.equal((await handleResearch(service('directory/complete',{...lookup,lease:'bad',matches:[]}))).status,400);
+await call('directory/complete',{...lookup,matches:[{ticker:'PERSISTENT',name:'Persistent Systems Ltd',isin:'',sources:['https://www.persistent.com/']}]});
+assert.equal(await tools.directoryPending('Persistent Systems'),false);
+assert.equal((await tools.searchCompanies('Persistent Systems'))[0].ticker,'PERSISTENT');
+assert.equal((await tools.resolveCompany('PERSISTENT')).name,'Persistent Systems Ltd');
+assert.equal((await handleResearch(service('directory/complete',{...lookup,matches:[]}))).status,400,'Lookup completion cannot be replayed');
 globalThis.fetch=originalFetch;
 sqlite.close();
 console.log('PASS: migration/FTS, owner/origin/worker authorization, duplicate preparation, leases/replay, original storage, atomic index publication, issuer/period/type filters, model-off retrieval, grounded answers/numbers, cache reuse and source-version invalidation.');

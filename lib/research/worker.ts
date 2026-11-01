@@ -34,6 +34,21 @@ export async function researchWorkerAction(action:string,body:any){
     const data={memoryAvailableMb:Number(body.memoryAvailableMb)||0,workerVersion:String(body.workerVersion||"").slice(0,40),modelEnabled:body.modelEnabled===true,lastChildPeakMb:Number(body.lastChildPeakMb)||0};
     await db.prepare("INSERT INTO research_worker(id,last_seen,model_ready,data) VALUES('vm',?,?,?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,model_ready=excluded.model_ready,data=excluded.data").bind(now,body.modelReady===true?1:0,JSON.stringify(data)).run();return {ok:true};
   }
+  if(action==='directory/claim'){
+    const cutoff=new Date(Date.now()-180000).toISOString(),lease=crypto.randomUUID();
+    const row=await db.prepare("UPDATE provider_cache SET data=json_set(data,'$.status','running','$.lease',?),fetched_at=? WHERE key=(SELECT key FROM provider_cache WHERE key LIKE 'research-directory-request:%' AND (json_extract(data,'$.status')='queued' OR (json_extract(data,'$.status')='running' AND fetched_at<?)) ORDER BY fetched_at LIMIT 1) RETURNING key,data").bind(lease,now,cutoff).first<{key:string;data:string}>();
+    return {lookup:row?{key:row.key,lease,query:parse<any>(row.data,{}).query}:null};
+  }
+  if(action==='directory/complete'){
+    const row=await db.prepare("SELECT data FROM provider_cache WHERE key=? AND json_extract(data,'$.status')='running' AND json_extract(data,'$.lease')=?").bind(String(body.key||''),String(body.lease||'')).first<{data:string}>();
+    if(!row)throw new Error('Company lookup lease is missing or expired');
+    if(!Array.isArray(body.matches)||body.matches.length>8)throw new Error('Invalid company lookup results');
+    const identities=body.matches.map((c:any)=>{if(!c||!text(c.ticker,25)||!/^[A-Z0-9][A-Z0-9&-]*$/.test(c.ticker)||!text(c.name,200)||!c.name.trim()||!Array.isArray(c.sources)||c.sources.length>3||c.sources.some((s:any)=>!text(s,500)||!/^https:\/\//.test(s)))throw new Error('Invalid verified company identity');return {ticker:c.ticker,name:c.name,isin:typeof c.isin==='string'&&/^IN[A-Z0-9]{10}$/.test(c.isin)?c.isin:'',sources:c.sources};});
+    const query=parse<any>(row.data,{}).query,statements=identities.map((c:any)=>db.prepare("INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at").bind('research-company-identity:'+c.ticker,JSON.stringify(c),now));
+    if(!body.failed)statements.push(db.prepare("INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at").bind('research-company-search:'+String(query).toLowerCase(),JSON.stringify(identities),now));
+    statements.push(db.prepare("UPDATE provider_cache SET data=?,fetched_at=? WHERE key=? AND json_extract(data,'$.lease')=?").bind(JSON.stringify({query,status:body.failed?'failed':'done'}),now,body.key,body.lease));
+    await db.batch(statements);return {accepted:true,matches:identities.length};
+  }
   if(action==="bootstrap"){
     await seedResearch();const jobs=[];
     for(const seed of seedResearchCompanies){const c=await company(seed.ticker);if(c?.status==="registered"||body.refresh===true)jobs.push(await enqueuePreparation(seed.ticker,owner));}

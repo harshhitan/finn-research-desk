@@ -51,13 +51,16 @@ export function searchExpression(question:string){
 export async function searchCorpus(ticker:string,question:string,filters:ResearchFilters={},limit=10):Promise<ResearchPassage[]>{
   const expression=searchExpression(question);if(!expression)return [];
   const types=filters.types||["annual_report","earnings_call"],period=filters.period||null;
-  const rows=await database().prepare(`SELECT c.*,d.title,d.period,d.type,d.source_url
+  const query=(match:string,count:number)=>database().prepare(`SELECT c.*,d.title,d.period,d.type,d.source_url
     FROM research_chunk_fts f JOIN research_chunks c ON c.id=f.chunk_id
     JOIN research_documents d ON d.id=c.document_id AND d.active_version=c.version_id
     WHERE research_chunk_fts MATCH ? AND c.ticker=? AND d.type IN (?,?)
     AND (? IS NULL OR d.period LIKE ?) ORDER BY bm25(research_chunk_fts) LIMIT ?`)
-    .bind(expression,ticker,types[0]||"",types[1]||types[0]||"",period,period?"%"+period+"%":null,80).all<ResearchPassage>();
-  return rankPassages(rows.results,question,limit);
+    .bind(match,ticker,types[0]||"",types[1]||types[0]||"",period,period?"%"+period+"%":null,count).all<ResearchPassage>();
+  const cash=/cash/i.test(question)&&/operating|conversion/i.test(question);
+  const results=await Promise.all([query(expression,80),...(cash?[query('"cash" AND ("operating" OR "conversion")',40)]:[])]);
+  const unique=new Map<string,ResearchPassage>();for(const rows of results.reverse())for(const p of rows.results)if(!unique.has(p.id))unique.set(p.id,p);
+  return rankPassages([...unique.values()],question,limit);
 }
 export function rankPassages(rows:ResearchPassage[],question:string,limit=10){
   const terms=(question.toLowerCase().match(/[a-z][a-z0-9]{1,30}/g)||[]).filter(w=>!stop.has(w));

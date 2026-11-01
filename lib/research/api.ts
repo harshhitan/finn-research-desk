@@ -1,6 +1,6 @@
 import {database,session} from "../repository";
 import {askQuestion,companies,company,coverage,enqueuePreparation,hydrateQuestion,readPassages,refreshQuestion,searchCorpus,seedResearch,stamp,workerStatus} from "./store";
-import {canonicalTicker,resolveCompany,searchCompanies,researchTools} from "./tools";
+import {canonicalTicker,directoryPending,resolveCompany,searchCompanies,researchTools} from "./tools";
 import {artifacts,putArtifact,researchWorkerAction,workerAuthorised} from "./worker";
 import type {ResearchFilters} from "./types";
 
@@ -31,7 +31,7 @@ export async function handleResearch(request:Request){
       const list=await companies();
       return json({companies:list,counts:{registered:list.length,ready:list.filter(c=>c.status==="ready").length,partial:list.filter(c=>c.status==="partial").length,preparing:list.filter(c=>c.status==="preparing").length},worker:await workerStatus(),policy:"Annual reports and earnings-call transcripts only",tools:Object.keys(researchTools)});
     }
-    if(path==="companies/search"&&request.method==="GET")return json({companies:await searchCompanies((url.searchParams.get("q")||"").slice(0,100))});
+    if(path==="companies/search"&&request.method==="GET"){const query=(url.searchParams.get('q')||'').trim().slice(0,100),found=await searchCompanies(query);return json({companies:found,pending:!found.length&&await directoryPending(query)});}
     if(path==="companies/prepare"&&request.method==="POST"){
       const body:any=await request.json(),c=await resolveCompany(String(body.ticker||""));return json({company:c,job:await enqueuePreparation(c.ticker,owner)},202);
     }

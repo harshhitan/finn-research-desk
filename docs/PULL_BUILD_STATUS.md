@@ -11,6 +11,8 @@ ingestion: RELIANCE, TCS, INFY, HINDUNILVR, LT and NTPC. The separate VM service
 `finn-research.service` runs outbound only, with no MCP, inbound server or
 personal-computer dependency. New ticker discovery uses the NSE directory, with
 a cached Screener lookup and matching linked NSE identity when NSE is unavailable.
+When hosted lookups fail, a bounded directory request runs on the VM and the UI
+polls its cached, verified result. No personal computer proxy is involved.
 The old Reliance desk and saved research remain available.
 
 The worker uses standard-library Python, Poppler page batches and optional bounded

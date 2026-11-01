@@ -3,6 +3,16 @@ import {companies,company,coverage,parse,searchCorpus,readPassages,stamp} from "
 import {seedResearchCompanies,type ResearchFilters} from "./types";
 
 type Identity={ticker:string;name:string;isin:string;sources:string[]};
+export const directoryRequestKey=(query:string)=>'research-directory-request:'+query.trim().toLowerCase();
+export async function directoryPending(query:string){const row=await database().prepare("SELECT data FROM provider_cache WHERE key=?").bind(directoryRequestKey(query)).first<{data:string}>();return ['queued','running'].includes(parse<any>(row?.data,{}).status);}
+async function queueDirectory(query:string){
+  const db=database(),key=directoryRequestKey(query),prior=await db.prepare("SELECT data,fetched_at FROM provider_cache WHERE key=?").bind(key).first<{data:string;fetched_at:string}>();
+  if(prior&&Date.now()-Date.parse(prior.fetched_at)<180000&&['queued','running'].includes(parse<any>(prior.data,{}).status))return;
+  if(prior&&Date.now()-Date.parse(prior.fetched_at)<60000&&parse<any>(prior.data,{}).status==='failed')throw new Error('Company sources are temporarily unavailable. Please retry in a minute.');
+  const pending=await db.prepare("SELECT COUNT(*) AS n FROM provider_cache WHERE key LIKE 'research-directory-request:%' AND json_extract(data,'$.status') IN ('queued','running') AND fetched_at>?").bind(new Date(Date.now()-180000).toISOString()).first<{n:number}>();
+  if((pending?.n||0)>=10)throw new Error('Company lookup queue is full. Please retry after current requests finish.');
+  await db.prepare("INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at").bind(key,JSON.stringify({query:query.trim().slice(0,100),status:'queued'}),stamp()).run();
+}
 const tickerPattern=/^[A-Z0-9][A-Z0-9&-]{0,24}$/;
 export const canonicalTicker=(s:string)=>s.trim().toUpperCase().replace(/\.(NS|BO)$/," ").trim();
 function csvLine(line:string){return (line.match(/(?:"(?:[^"]|"")*"|[^,]*)(?:,|$)/g)||[]).map(s=>s.replace(/,$/,"").replace(/^"|"$/g,"").replaceAll('""','"'));}
@@ -55,7 +65,8 @@ async function linkedCompanyIdentity(ticker:string):Promise<Identity>{
 export async function resolveCompany(input:string){
   const symbol=canonicalTicker(input);if(!tickerPattern.test(symbol))throw new Error("Choose a valid NSE ticker from company search");
   const existing=await company(symbol);if(existing)return existing;
-  let match:Identity|undefined;try{match=(await directory()).find(c=>c.ticker===symbol);}catch{}
+  const verified=await database().prepare("SELECT data FROM provider_cache WHERE key=?").bind('research-company-identity:'+symbol).first<{data:string}>();
+  let match:Identity|undefined=verified?parse(verified.data,undefined):undefined;try{if(!match)match=(await directory()).find(c=>c.ticker===symbol);}catch{}
   if(!match)match=await linkedCompanyIdentity(symbol);
   const now=stamp();
   await database().prepare("INSERT INTO research_companies(ticker,name,isin,sources,status,created_at,updated_at) VALUES(?,?,?,?,'registered',?,?) ON CONFLICT(ticker) DO NOTHING").bind(match.ticker,match.name,match.isin,JSON.stringify(match.sources),now,now).run();
@@ -65,8 +76,11 @@ export async function searchCompanies(query:string){
   const q=query.trim().toUpperCase(),existing=await companies();if(!q)return existing;
   const matches=(c:{ticker:string;name:string})=>c.ticker.includes(q)||c.name.toUpperCase().includes(q);
   const local=existing.filter(matches);if(q.length<2||local.length)return local;
+  const cached=await database().prepare("SELECT data,fetched_at FROM provider_cache WHERE key=?").bind('research-company-search:'+query.trim().toLowerCase()).first<{data:string;fetched_at:string}>();
+  if(cached&&Date.now()-Date.parse(cached.fetched_at)<3600000)return parse<Identity[]>(cached.data,[]).map(c=>({...c,status:'not_indexed'}));
+  if(await directoryPending(query))return [];
   let rows:Identity[]=[];try{rows=(await directory()).filter(matches).slice(0,12);}catch{}
-  if(!rows.length)try{rows=await searchDirectoryFallback(query);}catch{throw new Error("Company lookup is temporarily unavailable. Existing research remains available; retry later.");}
+  if(!rows.length)try{rows=await searchDirectoryFallback(query);}catch{await queueDirectory(query);return [];}
   return rows.map(c=>({...c,status:"not_indexed"}));
 }
 // Only repeated research operations are registered. These are ordinary internal
