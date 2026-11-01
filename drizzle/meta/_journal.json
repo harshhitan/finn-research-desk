@@ -29,6 +29,13 @@
       "when": 1793528110410,
       "tag": "0003_flaky_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793539238272,
+      "tag": "0004_magical_reptil",
+      "breakpoints": true
     }
   ]
 }

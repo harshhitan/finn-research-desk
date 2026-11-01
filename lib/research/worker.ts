@@ -41,6 +41,10 @@ export async function researchWorkerAction(action:string,body:any){
     if(typeof filters!=='object'||Array.isArray(filters)||Object.keys(filters).some(k=>!['period','types'].includes(k))||(filters.period!==undefined&&(!text(filters.period,9)||!/^\d{4}(?:-\d{2,4})?$/.test(filters.period)))||(filters.types!==undefined&&(!Array.isArray(filters.types)||filters.types.length>2||filters.types.some((t:any)=>!['annual_report','earnings_call'].includes(t)))))throw new Error('Invalid evidence-check filters');
     return {coverage:await researchTools.get_company_coverage.run(body.ticker),passages:await researchTools.search_corpus.run(body.ticker,body.query,filters)};
   }
+  if(action==='facts/check'){
+    if(!text(body.ticker,25)||!await company(body.ticker))throw new Error('Choose an indexed company');
+    return researchTools.get_financial_facts.run(body.ticker,body.metric,body.scope);
+  }
   if(action==='directory/claim'){
     const cutoff=new Date(Date.now()-180000).toISOString(),lease=crypto.randomUUID();
     const row=await db.prepare("UPDATE provider_cache SET data=json_set(data,'$.status','running','$.lease',?),fetched_at=? WHERE key=(SELECT key FROM provider_cache WHERE key LIKE 'research-directory-request:%' AND (json_extract(data,'$.status')='queued' OR (json_extract(data,'$.status')='running' AND fetched_at<?)) ORDER BY fetched_at LIMIT 1) RETURNING key,data").bind(lease,now,cutoff).first<{key:string;data:string}>();

@@ -57,3 +57,9 @@ export const researchWorker = sqliteTable("research_worker", {
   id:text("id").primaryKey(), lastSeen:text("last_seen").notNull(), modelReady:integer("model_ready").notNull(),
   data:text("data").notNull(),
 });
+export const researchFinancialFacts = sqliteTable('research_financial_facts', {
+  id:text('id').primaryKey(), ticker:text('ticker').notNull(), documentId:text('document_id').notNull(),
+  versionId:text('version_id').notNull(), metric:text('metric').notNull(), period:text('period').notNull(),
+  scope:text('scope').notNull(), validation:text('validation').notNull(), data:text('data').notNull(),
+  extractor:text('extractor').notNull(), createdAt:text('created_at').notNull(),
+},t=>[index('research_facts_company').on(t.ticker,t.metric,t.period)]);

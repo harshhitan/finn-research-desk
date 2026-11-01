@@ -7,11 +7,11 @@ globalThis.Date=class extends ActualDate{constructor(...args){if(args.length)sup
 const root=new URL('../',import.meta.url),out=new URL('../.sites-runtime/research-tests/',import.meta.url);
 await fs.mkdir(out,{recursive:true});
 await fs.writeFile(new URL('env.mjs',out),'export const env=globalThis.__researchEnv;');
-const modules=['repository','finance','research/types','research/store','research/tools','research/worker','research/api'];
+const modules=['repository','finance','research/types','research/store','research/facts','research/tools','research/worker','research/api'];
 const moduleUrl=n=>new URL(n.replaceAll('/','-')+'.mjs',out);
 for(const n of modules){
   const file=new URL(`lib/${n}.ts`,root);let js=ts.transpileModule(await fs.readFile(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-  js=js.replace(/from "([^"]+)"/g,(whole,spec)=>spec==='cloudflare:workers'?`from ${JSON.stringify(new URL('env.mjs',out).href)}`:spec.startsWith('.')?`from ${JSON.stringify(moduleUrl(new URL(spec,file).pathname.split('/lib/')[1]).href)}`:whole);
+  js=js.replace(/from (['"])([^'"]+)\1/g,(whole,quote,spec)=>spec==='cloudflare:workers'?`from ${JSON.stringify(new URL('env.mjs',out).href)}`:spec.startsWith('.')?`from ${JSON.stringify(moduleUrl(new URL(spec,file).pathname.split('/lib/')[1]).href)}`:whole);
   await fs.writeFile(moduleUrl(n),js);
 }
 const sqlite=new DatabaseSync(':memory:');
@@ -21,6 +21,7 @@ const binding={prepare(sql){let values=[];return {bind(...v){values=v;return thi
 const files=new Map(),bucket={async put(key,body){files.set(key,new Uint8Array(await new Response(body).arrayBuffer()));},async head(key){return files.has(key)?{size:files.get(key).length}:null;},async get(key,options){if(!files.has(key))return null;const bytes=files.get(key),range=options?.range;return {body:range?bytes.slice(range.offset,range.offset+range.length):bytes};}};
 globalThis.__researchEnv={DB:binding,BUCKET:bucket,FINN_MONITOR_JOB_TOKEN:'worker-secret',FINN_PRIVATE_CODEX_OWNER:'alice',FINN_PRIVATE_CODEX_MODEL:'test-model'};
 const store=await import(moduleUrl('research/store')),worker=await import(moduleUrl('research/worker')),tools=await import(moduleUrl('research/tools')),{handleResearch}=await import(moduleUrl('research/api'));
+const financials=await import(moduleUrl('research/facts'));
 const user=(path='',method='GET',body,owner='alice',origin='https://finn.test')=>new Request('https://finn.test/api/research'+path,{method,headers:{'oai-authenticated-user-id':owner,Origin:origin,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
 const service=(path,body={},token='worker-secret')=>new Request('https://finn.test/api/research/worker/'+path,{method:'POST',headers:{'X-Finn-Job-Token':token,'Content-Type':'application/json'},body:JSON.stringify(body)});
 const call=async(path,body)=>{const response=await handleResearch(service(path,body));const data=await response.json();assert.equal(response.status,200,JSON.stringify(data));return data;};
@@ -215,5 +216,26 @@ const frozenDate=globalThis.Date;globalThis.Date=class extends ActualDate{constr
 assert.equal((await store.companies()).find(c=>c.ticker==='HINDUNILVR').status,'partial','Library readiness ages on read without a scheduled model job');
 assert.equal((await store.coverage('HINDUNILVR')).company.status,'partial','Company detail cannot advertise stale coverage as ready');globalThis.Date=frozenDate;
 const retainedOld=selectionVersions.find(v=>v.period==='FY2024');assert.equal((await handleResearch(user('/documents/'+retainedOld.documentId+'/original?version='+retainedOld.versionId))).status,200,'Retiring an older selection preserves its cited original');
+// Financial calculations use table headers and exact decimal arithmetic, with
+// explicit refusals for ambiguous layouts, units, scope and incompatible periods.
+const financialPage={...passages[0],id:'financial-table',period:'FY2026',heading:'Consolidated Statement of Cash Flows',text:'Consolidated Statement of Cash Flows\n(INR crore)\nYear ended          Year ended\nMarch 31, 2026      March 31, 2025\nNet cash flows generated from operating activities    52,094    48,908'};
+const extracted=financials.extractCashFacts([financialPage],'operating_cash_flow','consolidated').map((f,i)=>({...f,id:'fact-'+i}));
+assert.equal(extracted.length,2);assert.equal(extracted[0].period,'FY2026');assert.equal(extracted[0].value,'52094');assert.equal(extracted[1].value,'48908');
+const calculated=financials.compareFinancialFacts(extracted[1],extracted[0]);assert.equal(calculated.change,'3186');assert.equal(calculated.percent,'6.5142');assert.equal(calculated.modelInvoked,false);
+for(const text of [financialPage.text.replace('INR crore','USD million'),financialPage.text.replace('March 31, 2026      March 31, 2025','2026'),financialPage.text+'\nNet cash flows generated from operating activities   55,000    48,908',financialPage.text.replace('52,094    48,908','52,094    48,908    40,000')])assert.equal(financials.extractCashFacts([{...financialPage,text}],'operating_cash_flow','consolidated').length,0);
+assert.equal(financials.extractCashFacts([financialPage],'operating_cash_flow','standalone').length,0);
+const negative=financials.extractCashFacts([{...financialPage,text:financialPage.text.replace('52,094    48,908','(100.25)    (90.10)')}],'operating_cash_flow','consolidated').map((f,i)=>({...f,id:'negative-'+i}));
+assert.equal(negative[0].value,'-100.25');assert.equal(financials.compareFinancialFacts(negative[1],negative[0]).change,'-10.15');assert.equal(financials.compareFinancialFacts(negative[1],negative[0]).percent,null);
+assert.throws(()=>financials.compareFinancialFacts(extracted[1],{...extracted[0],scope:'standalone'}),/same company/);assert.throws(()=>financials.compareFinancialFacts(extracted[1],{...extracted[0],period:'FY2027'}),/consecutive/);
+assert.equal(financials.compareFinancialFacts({...extracted[1],value:'100',unit:'million'},{...extracted[0],value:'12',unit:'crore'}).change,'2','Unit conversion uses integer decimal arithmetic');
+const factDocument=currentSelection.find(d=>d.type==='annual_report'&&d.period==='FY2026');
+sqlite.prepare('UPDATE research_chunks SET heading=?,text=? WHERE version_id=?').run(financialPage.heading,financialPage.text,factDocument.active_version);
+const verifiedFacts=await (await handleResearch(user('/facts','POST',{ticker:'HINDUNILVR',metric:'operating_cash_flow',scope:'consolidated'}))).json();assert.equal(verifiedFacts.facts.length,2);assert.equal(verifiedFacts.facts[0].ticker,'HINDUNILVR');
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM research_financial_facts').get().n,2,'Validated facts are durable and source-versioned');
+const compared=await (await handleResearch(user('/facts/compare','POST',{ticker:'HINDUNILVR',metric:'operating_cash_flow',scope:'consolidated',basePeriod:'FY2025',currentPeriod:'FY2026'}))).json();assert.equal(compared.comparison.change,'3186');assert.equal(compared.comparison.dependencies.length,2);
+assert.equal((await handleResearch(user('/facts','POST',{ticker:'HINDUNILVR',metric:'made_up_metric',scope:'consolidated'}))).status,400);
+assert.equal((await handleResearch(user('/facts/compare','POST',{ticker:'HINDUNILVR',metric:'operating_cash_flow',scope:'consolidated',basePeriod:'FY2024',currentPeriod:'FY2026'}))).status,200,'Missing inputs return an evidence gap, without making a calculation');
+sqlite.prepare('UPDATE research_documents SET active_version=NULL WHERE id=?').run(factDocument.id);
+assert.equal((await financials.getFinancialFacts('HINDUNILVR','operating_cash_flow','consolidated')).facts.length,0,'A retired source version cannot reappear through the fact cache');
 sqlite.close();
 console.log('PASS: migration/FTS, owner/origin/worker authorization, duplicate preparation, leases/replay, original storage, atomic index publication, issuer/period/type filters, model-off retrieval, grounded answers/numbers, cache reuse and source-version invalidation.');

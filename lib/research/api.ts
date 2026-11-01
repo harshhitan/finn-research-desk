@@ -3,6 +3,7 @@ import {askQuestion,companies,company,coverage,enqueuePreparation,hydrateQuestio
 import {canonicalTicker,directoryPending,resolveCompany,searchCompanies,researchTools} from "./tools";
 import {artifacts,putArtifact,researchWorkerAction,workerAuthorised} from "./worker";
 import type {ResearchFilters} from "./types";
+import {financialMetrics,type FinancialMetric,type FinancialScope} from './facts';
 
 function filters(value:any):ResearchFilters{
   if(value===undefined)return {};
@@ -48,6 +49,11 @@ export async function handleResearch(request:Request){
     if(path==="questions"&&request.method==="POST"){
       const b:any=await request.json();if(typeof b.question!=="string"||b.question.trim().length<5||b.question.length>600)throw new Error("Enter a research question between 5 and 600 characters");
       const c=await resolveCompany(String(b.ticker||""));return json(await askQuestion(owner,c.ticker,b.question.trim(),filters(b.filters)),202);
+    }
+    if(['facts','facts/compare'].includes(path)&&request.method==='POST'){
+      const b:any=await request.json(),ticker=canonicalTicker(String(b.ticker||''));
+      if(!await company(ticker)||!Object.hasOwn(financialMetrics,b.metric)||!['consolidated','standalone'].includes(b.scope))throw new Error('Choose a research company, cash-flow metric and accounting scope');
+      return json(path==='facts'?await researchTools.get_financial_facts.run(ticker,b.metric as FinancialMetric,b.scope as FinancialScope):await researchTools.compare_facts.run(ticker,b.metric as FinancialMetric,b.scope as FinancialScope,String(b.basePeriod||''),String(b.currentPeriod||'')));
     }
     if(path==="history"&&request.method==="GET"){
       const ticker=url.searchParams.get("ticker"),rows=await database().prepare("SELECT * FROM research_questions WHERE owner=? AND (? IS NULL OR ticker=?) ORDER BY created_at DESC LIMIT 30").bind(owner,ticker,ticker).all();return json({questions:rows.results.map(hydrateQuestion)});

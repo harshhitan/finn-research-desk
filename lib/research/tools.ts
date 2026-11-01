@@ -1,6 +1,7 @@
 import {database} from "../repository";
 import {companies,company,coverage,parse,searchCorpus,readPassages,stamp} from "./store";
 import {seedResearchCompanies,type ResearchFilters} from "./types";
+import {getFinancialFacts,compareAnnualFacts,type FinancialMetric,type FinancialScope} from './facts';
 
 type Identity={ticker:string;name:string;isin:string;sources:string[]};
 export const directoryRequestKey=(query:string)=>'research-directory-request:'+query.trim().toLowerCase();
@@ -86,6 +87,8 @@ export async function searchCompanies(query:string){
 // Only repeated research operations are registered. These are ordinary internal
 // functions; there is no MCP server or personal-computer dependency.
 export const researchTools={
+  get_financial_facts:{version:'1',readOnly:true,location:'site',timeoutMs:15000,maxResults:12,modelUse:false,cache:'validated totals tied to active document versions',inputSchema:{type:'object',required:['ticker','metric','scope'],properties:{ticker:{type:'string'},metric:{enum:['operating_cash_flow','investing_cash_flow','financing_cash_flow']},scope:{enum:['consolidated','standalone']}}},run:(ticker:string,metric:FinancialMetric,scope:FinancialScope)=>getFinancialFacts(ticker,metric,scope)},
+  compare_facts:{version:'1',readOnly:true,location:'site',timeoutMs:15000,maxResults:1,modelUse:false,cache:'formula and immutable validated fact IDs',inputSchema:{type:'object',required:['ticker','metric','scope','basePeriod','currentPeriod'],properties:{ticker:{type:'string'},metric:{enum:['operating_cash_flow','investing_cash_flow','financing_cash_flow']},scope:{enum:['consolidated','standalone']},basePeriod:{type:'string'},currentPeriod:{type:'string'}}},run:(ticker:string,metric:FinancialMetric,scope:FinancialScope,basePeriod:string,currentPeriod:string)=>compareAnnualFacts(ticker,metric,scope,basePeriod,currentPeriod)},
   get_company_coverage:{version:'1',readOnly:true,location:'site',timeoutMs:10000,maxResults:40,modelUse:false,cache:'current document versions',inputSchema:{type:'object',required:['ticker'],properties:{ticker:{type:'string',maxLength:25}}},run:(ticker:string)=>coverage(ticker)},
   search_corpus:{version:'2',readOnly:true,location:'site',timeoutMs:10000,maxResults:12,modelUse:false,cache:'FTS index of current document versions',inputSchema:{type:'object',required:['ticker','question'],properties:{ticker:{type:'string',maxLength:25},question:{type:'string',maxLength:600},filters:{type:'object'}}},run:(ticker:string,question:string,filters?:ResearchFilters)=>searchCorpus(ticker,question,filters)},
   read_passages:{version:'1',readOnly:true,location:'site',timeoutMs:10000,maxResults:12,modelUse:false,cache:'immutable passage/version IDs',inputSchema:{type:'object',required:['ticker','ids'],properties:{ticker:{type:'string',maxLength:25},ids:{type:'array',maxItems:12,items:{type:'string'}}}},run:(ticker:string,ids:string[])=>readPassages(ticker,ids)},
