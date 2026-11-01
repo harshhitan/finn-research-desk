@@ -54,7 +54,7 @@ explicit retry and never repeats automatically.
 Research protocol tests cover authorization, leases/replay, original storage,
 atomic publication and metadata, annual alias retirement, historical PDFs,
 issuer/type/year filtering, retrieval ranking/diversity, model-off evidence,
-answer/citation validation, caching and directory fallback. Twenty-two Linux worker
+answer/citation validation, caching and directory fallback. Twenty-three Linux worker
 tests cover URL, memory, document, period, conversion, disabled-model guards and
 private failure diagnostics, staged indexing recovery and serial question
 checkpoints after conversion. Staged uploads resume only a contiguous ordinal
@@ -181,6 +181,13 @@ call in the last four completed quarters. Older valid periods stay searchable.
 Readiness degrades on read as evidence ages; no model scheduling is required.
 The source panel exposes latest periods and recent call counts. These freshness
 and live NTPC corrections still require publication and real refresh verification.
+
+NTPC subsequently returned an HTTP-200 browser-verification page to the VM.
+The worker records this as a source-access failure rather than silently treating
+it as an empty archive. It does not solve or bypass verification. Existing R2
+originals remain available and exchange-filed copies are an independent primary
+source. Table row context preserves the enclosing report section so generic
+year-labelled annual links remain identifiable.
 
 The 26-case review excluding NTPC returned no scope violations and empty results
 for all three absent-2099 cases. Manual review found a broad HUL-category

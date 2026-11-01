@@ -11,12 +11,20 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_browser_verification_page_is_not_silent_empty_discovery(self):
+        class Response(io.BytesIO):url='https://issuer.test/ir'
+        with patch.object(worker,'source_open',return_value=Response(b'<html><title>Radware Captcha Page</title></html>')):
+            with self.assertRaisesRegex(worker.ResearchError,'browser verification'):
+                worker.html_links('https://issuer.test/ir')
+
     def test_table_rows_distinguish_synopses_notices_and_transcripts(self):
         parser=worker.Links('https://issuer.test/investors/conference-call')
         parser.feed('<table><tr><td>Presentation/Key Performance Highlights</td><td><a href="/file.pdf">Q1</a></td></tr><tr><td>Intimation of conference call</td><td><a href="/notice.pdf">Q2</a></td></tr><tr><td>Transcript</td><td><a href="/FinalTransctiptQ2FY26.pdf">Q2</a></td></tr></table>')
         kinds=[worker.document_kind(url,label,context+' '+parser.base) for url,label,context in parser.links]
         self.assertEqual(kinds,[None,None,'earnings_call'])
         self.assertIsNone(worker.document_kind('https://issuer.test/OFS_Q1_FY27.pdf','Q1','conference-call'))
+        annual=worker.Links('https://issuer.test/ir');annual.feed('<h2>Annual reports</h2><table><tr><td><a href="/filing-uuid.pdf">2026</a></td></tr></table>')
+        self.assertEqual(worker.document_kind(*annual.links[0]),'annual_report','Table context must preserve the enclosing report section')
 
     def test_financial_year_selector_uses_two_observed_same_page_targets(self):
         parser=worker.Links('https://issuer.test/investors/conference-call?language=en')

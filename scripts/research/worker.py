@@ -110,7 +110,7 @@ class Links(HTMLParser):
         if tag == 'a' and attrs.get('href'):
             target = urllib.parse.urljoin(self.base, attrs['href'])
             target = urllib.parse.quote(target, safe=":/?#[]@!$&'()*+,;=%-._~")
-            context=('Row: '+self.row_context) if self.row_context is not None else self.section+' '+self.context[-180:]
+            context=(self.section+' Row: '+self.row_context) if self.row_context is not None else self.section+' '+self.context[-180:]
             self.current = [target, '', context]
         elif any(attrs.get(key) for key in ('data-href','data-url','value')):
             target = next((attrs[key] for key in ('data-href','data-url','value') if attrs.get(key)), '')
@@ -160,6 +160,8 @@ def html_links(url):
             return [(response.url, '', '')]
         parser = Links(response.url)
         source = raw.decode('utf-8', 'replace')
+        if re.search(r'<title[^>]*>[^<]*(?:captcha|browser.?verification|access.denied|security.check)',source,re.I):
+            raise ResearchError('Primary source requires browser verification; use another primary source or retry later')
         parser.feed(source)
         # Issuer pages also put download URLs in JSON/data attributes. These
         # links still pass primary-host, type and downloaded-document checks.
@@ -175,7 +177,7 @@ def document_kind(url, label='', context=''):
         return None
     if re.search(r'\bppt\b|presentation|fact.?sheet|ai.?summary|annual.?general.?meeting|\bagm\b', value):
         return None
-    if not re.search(r'transcript|transctipt',value) and (re.search(r'(?:^|[^a-z])ofs(?:[^a-z]|$)',value) or re.search(r'^Row:\s*(?:Presentation|Key\s*Performance|Intimation|Audio|Video)',context,re.I)):
+    if not re.search(r'transcript|transctipt',value) and (re.search(r'(?:^|[^a-z])ofs(?:[^a-z]|$)',value) or re.search(r'\bRow:\s*(?:Presentation|Key\s*Performance|Intimation|Audio|Video)',context,re.I)):
         return None
     if re.search(r'annual\s+analysts|institutional\s+investors\s+meet|audio.?video|audio\s+recording', value):
         return None
@@ -187,11 +189,11 @@ def document_kind(url, label='', context=''):
         return 'annual_report'
     # A generic "Download" link needs its surrounding source section.
     combined = context.lower()
-    if label.strip() and not re.match(r'^(download|view(?:\s*/\s*download)?|pdf|click here|Q[1-4])(?:\s|\(|$)',label.strip(),re.I):
+    if label.strip() and not re.match(r'^(download|view(?:\s*/\s*download)?|pdf|click here|Q[1-4]|20\d{2}(?:[-–/](?:20)?\d{2})?)(?:\s|\(|$)',label.strip(),re.I):
         return None
     if re.search(r'concall|transcript|conference.?call|earnings.?call', combined):
         return 'earnings_call'
-    if re.search(r'annual report|integrated report', combined):
+    if re.search(r'annual.?reports?|integrated.?reports?', combined):
         return 'annual_report'
     return None
 
