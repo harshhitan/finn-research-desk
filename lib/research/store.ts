@@ -90,9 +90,9 @@ export function rankPassages(rows:ResearchPassage[],question:string,limit=10){
   const business=needsBusinessOverview(question),risk=/\brisks?\b/i.test(question),latest=Math.max(0,...rows.map(p=>Number(p.period.match(/20\d{2}/)?.[0]||0))),preferRecent=business&&!/20\d{2}/.test(question);
   const scope=/\bconsolidated\b/i.test(question)&&!/\bstandalone\b/i.test(question)?'consolidated':/\bstandalone\b/i.test(question)&&!/\bconsolidated\b/i.test(question)?'standalone':null;
   const scored=rows.map((p,i)=>{const text=p.text.toLowerCase().replace(/\s+/g,' ');let score=terms.reduce((s,w)=>s+(text.includes(w)?4:0),0)+8/(1+i/5);
-    if(cash&&operating){if(/cash\s*(?:flows?)?\s*(?:from|generated\s*(?:from|by))?\s*operating\s*activities|operating\s*cash\s*flows?|cash\s*conversion/.test(text))score+=28;if(/net\s+cash\s+(?:flows?\s+)?(?:generated\s+from|provided\s+by|from)\s+operating/.test(text))score+=36;if(/cash\s*flow\s*statement|statement\s*of\s*cash\s*flows/.test(text))score+=8;}
+    if(cash&&operating){if(/cash\s*(?:flows?)?\s*(?:from|generated\s*(?:from|by))?\s*operating\s*activities|operating\s*cash\s*flows?|cash\s*conversion/.test(text))score+=28;if(/net\s+cash\s+(?:flows?\s+)?(?:generated\s+(?:from|by)|provided\s+by|from)\s+operating/.test(text))score+=36;if(/cash\s*flow\s*statement|statement\s*of\s*cash\s*flows/.test(text))score+=8;}
     if(cash&&operating&&p.text.split(/\r?\n/).some(line=>/net\s+cash\s+(?:flows?\s+)?(?:generated\s+(?:from|by)|provided\s+(?:by|from)|used\s+in|from)\s+operating\s+activities[^\d\n]{0,30}[-\u2212(]?\d/i.test(line.replace(/\s+/g,' '))))score+=24;
-    if(business){if(/segment(?:al)?\s+(?:information|reporting|revenue)|(?:reportable|operating)\s+segments|principal\s+activities/.test(text))score+=48;else if(/business\s+segments/.test(text))score+=12;if(/portfolio\s+of\s+(?:services|products)|(?:product|business)\s+categories|our\s+businesses|business\s+overview/.test(text))score+=16;if(preferRecent&&p.period.includes(String(latest)))score+=6;}
+    if(business){if(/segment(?:al)?\s+(?:information|reporting|revenue)|(?:reportable|operating)\s+segments|principal\s+activities/.test(text))score+=48;else if(/business\s+segments/.test(text))score+=12;if(/portfolio\s+of\s+(?:services|products)|(?:product|business)\s+categories|our\s+businesses|business\s+overview/.test(text))score+=16;if(/impairment\s+test|goodwill\s+impairment|pre-tax\s+discount\s+rates/.test(text)&&!/segment(?:al)?\s+(?:information|reporting)|(?:identified|following|comprise|comprises)\b.{0,100}\breportable\s+segments/.test(text))score-=32;if(preferRecent&&p.period.includes(String(latest)))score+=6;}
     if(risk&&/\brisks?\b|\bexposure\b/.test(text)&&terms.some(term=>!['risk','risks','uncertainties','uncertainty'].includes(term)&&text.includes(term)))score+=18;
     if(scope){const heading=(p.heading+' '+p.text.slice(0,120)).toLowerCase();if(new RegExp('\\b'+scope+'\\b').test(heading))score+=20;if(new RegExp('\\b'+(scope==='consolidated'?'standalone':'consolidated')+'\\b').test(heading))score-=20;}
     return {p,score};}).sort((a,b)=>b.score-a.score);
@@ -121,7 +121,7 @@ export async function evidenceSnapshot(ticker:string,question:string,filters:Res
 }
 export async function questionCacheKey(ticker:string,question:string,filters:ResearchFilters,version:string){
   const normalized={...(filters.period?{period:filters.period}:{}),...(filters.types?{types:[...new Set(filters.types)].sort()}: {})};
-  return hash(JSON.stringify([ticker,question.trim().replace(/\s+/g,' ').toLowerCase(),normalized,version,{prompt:'research-3',retrieval:'fts-neighbours-6',validation:'citations-2',model:(env as unknown as Record<string,unknown>).FINN_PRIVATE_CODEX_MODEL||'Codex'}]));
+  return hash(JSON.stringify([ticker,question.trim().replace(/\s+/g,' ').toLowerCase(),normalized,version,{prompt:'research-3',retrieval:'fts-neighbours-7',validation:'citations-2',model:(env as unknown as Record<string,unknown>).FINN_PRIVATE_CODEX_MODEL||'Codex'}]));
 }
 export async function synchronizeCompany(ticker:string,error:string|null=null){
   const db=database(),docs=await documents(ticker),indexed=docs.filter(d=>d.active_version);
