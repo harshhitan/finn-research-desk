@@ -54,8 +54,11 @@ explicit retry and never repeats automatically.
 Research protocol tests cover authorization, leases/replay, original storage,
 atomic publication and metadata, annual alias retirement, historical PDFs,
 issuer/type/year filtering, retrieval ranking/diversity, model-off evidence,
-answer/citation validation, caching and directory fallback. Thirteen Linux worker
-tests cover URL, memory, document, period, conversion and disabled-model guards.
+answer/citation validation, caching and directory fallback. Fifteen Linux worker
+tests cover URL, memory, document, period, conversion, disabled-model guards and
+private failure diagnostics, staged indexing recovery and serial question
+checkpoints after conversion. Staged uploads resume only a contiguous ordinal
+prefix; holes force idempotent replay and cannot be published as complete.
 Existing portfolio tests and TypeScript checks pass.
 The 28-case retrieval review set is in `scripts/research/evaluation-cases.json`.
 Run `evaluate.py --output /var/lib/finn-research/evaluation.json` on the VM after
@@ -80,7 +83,22 @@ The owner explicitly authorized on-demand answers and completed VM sign-in.
 Model startup succeeded under a 192 MiB memory cap: 88 MiB child and 20.2 MiB
 parent peak RSS. The configured gpt-6.1-sol model is available. Base installation
 remains model-disabled; the optional model profile permits credential refresh only
-after authorization. No scheduled model monitoring is enabled.
+after authorization. No scheduled model monitoring is enabled. The first real
+answer attempt failed and was withheld; startup success is not answer acceptance.
+Worker research-2.3 retains one bounded, owner-only diagnostic containing the
+failure stage, safe reason, rejected answer and supplied public passages. It
+excludes credentials and leases and never publishes a rejected answer to history.
+
+On 1 November at approximately 11:13 UTC, an explicit retry produced the first
+accepted live answer, for Coforge's business segments and revenue drivers. Manual
+review confirmed the FY2024 consolidated segment excerpt (PDF page 268) and the
+FY2026 service-category excerpt (PDF page 156). The answer explicitly labelled
+historical information and withheld unsupported current growth-driver conclusions.
+Repeating the identical request returned SAVED ANSWER, reusing the validated run.
+This is one reviewed answer, not the complete evaluation suite. The initial
+failure reason predates private diagnostics and remains unknown. The service
+stayed active with zero automatic restarts and a 195.1 MiB cgroup peak during this
+run, under the 256 MiB cap.
 
 The stricter call policy requires earnings context and dialogue in the PDF, not
 merely a filing letter mentioning a transcript. Analyst days, fireside chats and
@@ -94,13 +112,18 @@ partially readable documents remains partial, and expired jobs reconcile company
 status rather than leaving an empty library preparing indefinitely.
 Interactive preparations take priority over background seed refreshes. Publishing
 the first relevant document refreshes waiting questions without a browser poll.
-When explicitly enabled, inference runs between documents and a model failure
-does not abort ingestion. It still requires a separate live authorized model test.
+When explicitly enabled, inference runs between documents and at bounded upload
+checkpoints after converters have exited. It never overlaps a converter and
+renews the preparation lease after returning. A model failure does not abort
+ingestion. The live Coforge test above passed; wider answer evaluation remains.
 Answer amounts must appear in the actual cited quotes, with negative signs and
 accounting parentheses preserved. Numbers elsewhere on the same page cannot
 validate a different quoted claim. This is still not a proof of semantic support.
 Discovery cache keys use ticker, sources and policy version; progress/readiness
 timestamps cannot invalidate the daily discovery cache.
+Background connection errors have a separate, self-clearing status. Coverage
+refresh retries even when the initial load fails, and successful question polling
+clears its connection warning without clearing an unrelated user-action error.
 
 ## Operations and recovery
 

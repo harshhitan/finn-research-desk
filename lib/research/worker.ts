@@ -130,7 +130,11 @@ export async function researchWorkerAction(action:string,body:any){
     const existing=await db.prepare("SELECT status FROM research_document_versions WHERE id=?").bind(version).first<{status:string}>();
     if(existing?.status==="ready"||existing?.status==="partial")return {documentId:id,versionId:version,reused:true};
     await db.prepare("INSERT INTO research_document_versions(id,document_id,content_hash,parser,artifact_key,page_count,readable_pages,chunk_count,status,created_at,source_metadata) VALUES(?,?,?,?,?,?,?,0,'indexing',?,?) ON CONFLICT(id) DO NOTHING").bind(version,id,d.hash,d.parser,key,d.pages,d.readablePages,now,JSON.stringify({title:d.title,period:d.period,url:url.href})).run();
-    return {documentId:id,versionId:version,reused:false};
+    const staged=await db.prepare('SELECT COUNT(*) AS n,MIN(ordinal) AS first,MAX(ordinal) AS last FROM research_chunks WHERE version_id=?').bind(version).first<{n:number;first:number|null;last:number|null}>();
+    // Resume only a complete prefix. A gap must be repaired by replaying the
+    // idempotent batches, never mistaken for a completed indexing stage.
+    const nextOrdinal=staged&&staged.n>0&&staged.first===0&&staged.last===staged.n-1?staged.n:0;
+    return {documentId:id,versionId:version,reused:false,nextOrdinal};
   }
   if(action==="document/chunks"){
     const version=await db.prepare("SELECT v.* FROM research_document_versions v JOIN research_documents d ON d.id=v.document_id WHERE v.id=? AND d.ticker=? AND v.status='indexing'").bind(String(body.versionId||""),job.ticker).first<any>();

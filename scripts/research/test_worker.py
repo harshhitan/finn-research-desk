@@ -11,6 +11,41 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_staged_index_resumes_and_questions_run_only_after_conversion(self):
+        with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'1'}):
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))
+            digest='a'*64;url='https://issuer.test/report.pdf';events=[];calls=[]
+            (Path(path)/'cache'/(digest+'.pdf')).write_bytes(b'%PDF fixture')
+            instance.cache.execute('INSERT INTO files VALUES(?,?,?)',(url,digest,time.time()));instance.cache.commit()
+            def api(action,body):
+                calls.append((action,body))
+                if action=='document/known':return {'known':False}
+                if action=='document/start':return {'reused':False,'versionId':'version','nextOrdinal':25}
+                return {}
+            def pages(*args):
+                events.append('extracting')
+                yield 1,1,'Reliance Industries Annual Report 2025-26. Business operations and reported financial results.'
+                events.append('conversion_finished')
+            instance.api=api;instance.upload=lambda *args:None
+            instance.progress=lambda *args:events.append('progress')
+            instance.answer_waiting_question=lambda:events.append('answer')
+            chunks=[{'page':1,'heading':'Financial results','text':'The company reports its operating business and financial results.'} for _ in range(45)]
+            with patch.object(worker,'iter_pages',side_effect=pages),patch.object(worker,'page_chunks',return_value=chunks):
+                instance.process_document({'id':'job','lease':'lease','ticker':'RELIANCE','company':{'name':'Reliance Industries'}},{'url':url,'title':'Annual report','type':'annual_report'})
+            uploaded=[body for action,body in calls if action=='document/chunks']
+            self.assertEqual([c['ordinal'] for batch in uploaded for c in batch['chunks']],list(range(25,45)))
+            self.assertLess(events.index('conversion_finished'),events.index('answer'))
+            self.assertEqual(events[events.index('answer')+1],'progress','Renew the preparation lease after inference')
+            self.assertEqual(calls[-1][0],'document/finish');self.assertEqual(calls[-1][1]['chunkCount'],45)
+            instance.cache.close()
+
+    def test_rejected_answer_diagnostic_excludes_credentials_and_leases(self):
+        with tempfile.TemporaryDirectory() as path,patch('sys.stdout',new_callable=io.StringIO):
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'sensitive-test-service-token'},Path(path))
+            instance.record_model_failure({'id':'question','lease':'sensitive-test-lease','input':{'passages':[]}},'transport',RuntimeError('private provider body'),None)
+            diagnostic=Path(path)/'last-model-failure.json';raw=diagnostic.read_text()
+            self.assertNotIn('sensitive-test',raw);self.assertNotIn('private provider body',raw);self.assertEqual(diagnostic.stat().st_mode&0o077,0);instance.cache.close()
+
     def test_discovery_cache_depends_on_identity_not_progress(self):
         a={'ticker':'TCS','sources':['https://issuer.test/ir','https://issuer.test/reports'],'status':'preparing','updated_at':'first'}
         b={**a,'sources':list(reversed(a['sources'])),'status':'ready','updated_at':'later'}

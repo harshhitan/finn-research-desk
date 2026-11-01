@@ -30,7 +30,7 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.2'
+VERSION = 'research-2.4'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-1'
 DISCOVERY_POLICY = 'primary-links-2'
@@ -453,6 +453,7 @@ class Worker:
         self.state.mkdir(parents=True, exist_ok=True)
         self.opener = urllib.request.build_opener(NoRedirect())
         self.last_progress = 0
+        self.last_question_check = 0
         self.model_enabled = os.environ.get('FINN_RESEARCH_MODEL_ENABLED') == '1'
         self.cache = sqlite3.connect(str(self.state / 'cache.sqlite'))
         self.cache.execute('CREATE TABLE IF NOT EXISTS files(url TEXT PRIMARY KEY,hash TEXT NOT NULL,fetched_at REAL NOT NULL)')
@@ -640,13 +641,27 @@ class Worker:
             prepared = self.api('document/start', {'jobId': job['id'], 'lease': job['lease'], 'document': metadata})
             if prepared.get('reused'):
                 return {'url': document['url'], 'period':period, 'reused': True, 'pages': total}
+            next_ordinal=prepared.get('nextOrdinal',0)
+            if not isinstance(next_ordinal,int) or next_ordinal<0 or next_ordinal>count:
+                raise ResearchError('Stored indexing progress does not match this document conversion')
             batch = []
             with chunks_file.open(encoding='utf-8') as stream:
                 for line in stream:
-                    batch.append(json.loads(line))
+                    chunk=json.loads(line)
+                    if chunk['ordinal']<next_ordinal:
+                        continue
+                    batch.append(chunk)
                     if len(batch) == 20:
                         self.api('document/chunks', {'jobId': job['id'], 'lease': job['lease'], 'versionId': prepared['versionId'], 'chunks': batch})
-                        self.progress(job, 'Indexing page evidence', {'pages': total, 'chunksIndexed': batch[-1]['ordinal'] + 1, 'chunks': count})
+                        progress={'pages': total, 'chunksIndexed': batch[-1]['ordinal'] + 1, 'chunks': count}
+                        self.progress(job, 'Indexing page evidence', progress)
+                        # Converters have exited here. Serve an explicit question
+                        # serially at a bounded checkpoint, so background reports
+                        # do not delay existing-company answers for many minutes.
+                        if self.model_enabled and time.monotonic()-self.last_question_check>45:
+                            self.last_question_check=time.monotonic()
+                            self.answer_waiting_question()
+                            self.progress(job,'Indexing page evidence',progress)
                         batch = []
                 if batch:
                     self.api('document/chunks', {'jobId': job['id'], 'lease': job['lease'], 'versionId': prepared['versionId'], 'chunks': batch})
@@ -701,15 +716,33 @@ class Worker:
         work.mkdir(exist_ok=True)
         previous = Path.cwd()
         os.chdir(work)
-        client = None
+        client, value, stage = None, None, 'transport'
         try:
             client = module.Codex('/home/azureuser/.local/bin/codex', str(work))
-            answer = client.analyse(question)
-            self.api('question/complete', {'id': question['id'], 'lease': question['lease'], 'answer': answer})
+            value = client.analyse(question)
+            stage='validation'
+            self.api('question/complete', {'id': question['id'], 'lease': question['lease'], 'answer': value})
+        except Exception as error:
+            self.record_model_failure(question,stage,error,value)
+            raise
         finally:
             if client:
                 client.close()
             os.chdir(previous)
+
+    def record_model_failure(self,question,stage,error,answer):
+        reason=str(error)
+        if not reason.startswith(('FINN research HTTP','Codex rejected ','Codex attempted ','Codex turn did not complete','Codex analysis timed out','Codex response timed out','Codex exited before completion','Codex output exceeded')):
+            reason=type(error).__name__
+        record={'questionId':question['id'],'stage':stage,'reason':reason[:400],'answer':answer,'passages':question.get('input',{}).get('passages',[])}
+        if len(json.dumps(record))>180000:
+            record={'questionId':question['id'],'stage':stage,'reason':reason[:400],'detailOmitted':True}
+        # Private, bounded diagnostic only. Never include the service credential,
+        # model lease, auth cache or provider request headers, and never present
+        # a rejected answer as research history.
+        with os.fdopen(os.open(self.state/'last-model-failure.json',os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600),'w') as output:
+            json.dump(record,output)
+        print(json.dumps({'status':'model_attempt_failed','stage':stage,'reason':reason[:400]}),flush=True)
 
     def tick(self):
         self.heartbeat()
