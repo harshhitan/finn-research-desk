@@ -11,6 +11,25 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_refresh_rechecks_active_calls_after_target_is_reached(self):
+        with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'0'}):
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))
+            candidates=[{'url':'https://issuer.test/call'+str(i)+'.pdf','title':'Quarterly call','type':'earnings_call'} for i in range(6)]
+            stale='https://issuer.test/ai-day.pdf';checked=[];calls=[]
+            periods=['Q3 FY2025','Q4 FY2025','Q1 FY2026','Q2 FY2026','Q3 FY2026','Q4 FY2026']
+            def process(job,document,seen):
+                checked.append(document['url'])
+                if document['url']==stale:raise worker.IneligibleDocument('Investor AI Day is not a quarterly call',document,'a'*64)
+                return {'url':document['url'],'period':periods[len(checked)-1]}
+            instance.process_document=process;instance.directory_lookup=lambda:False;instance.progress=lambda *args:None
+            instance.api=lambda action,body:calls.append((action,body)) or {}
+            job={'id':'job','lease':'lease','company':{'ticker':'RELIANCE','sources':[]},'documents':[{'source_url':stale,'title':'Old AI Day transcript','type':'earnings_call','period':'Period unverified','active_version':'version'}]}
+            with patch.object(worker,'discover',return_value=(candidates,[])):
+                instance.prepare(job)
+            self.assertEqual(checked[-1],stale);self.assertEqual(calls[-1][0],'finish')
+            self.assertEqual(calls[-1][1]['exclusions'][0]['url'],stale)
+            instance.cache.close()
+
     def test_staged_index_resumes_and_questions_run_only_after_conversion(self):
         with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'1'}):
             instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))
@@ -72,10 +91,15 @@ class WorkerTests(unittest.TestCase):
             (Path(path)/'cache'/(digest+'.pdf')).write_bytes(b'%PDF fixture')
             instance.cache.execute('INSERT INTO files VALUES(?,?,?)',(url,digest,time.time()))
             instance.cache.execute('INSERT INTO call_validation VALUES(?,?,1,?,?)',(digest,worker.CALL_POLICY,'Q1 FY2027',''));instance.cache.commit()
-            instance.api=lambda action,body:{'known':True,'document':{'page_count':3}} if action=='document/known' else {}
+            actions=[]
+            def api(action,body):
+                actions.append((action,body))
+                return {'known':True,'document':{'page_count':3,'period':'Period unverified','version_id':'version','active_version':'version'}} if action=='document/known' else {}
+            instance.api=api
             with patch.object(worker,'iter_pages') as extraction:
                 result=instance.process_document({'id':'job','lease':'lease'},{'url':url,'title':'Call','type':'earnings_call'})
                 self.assertTrue(result['reused']);self.assertEqual(result['period'],'Q1 FY2027');extraction.assert_not_called()
+                self.assertEqual(actions[-1][0],'document/verified-period');self.assertEqual(actions[-1][1]['period'],'Q1 FY2027')
             instance.cache.execute('UPDATE call_validation SET eligible=0,reason=?',('A recording notice',));instance.cache.commit()
             with patch.object(worker,'iter_pages') as extraction:
                 with self.assertRaises(worker.IneligibleDocument):
@@ -99,6 +123,7 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(worker.verified_period('earnings_call','Infosys Q4 2025-26 conference call'),'Q4 FY2026')
         self.assertEqual(worker.verified_period('earnings_call','RIL Q1 FY2026 - 2027 Media & Analyst Call Transcript'),'Q1 FY2027')
         self.assertEqual(worker.verified_period('earnings_call','Transcript of the Earnings Call for the quarter ended 30th June, 2026'),'Q1 FY2027')
+        self.assertEqual(worker.verified_period('earnings_call','Transcript of the Earnings Call for the quarter and financial year ended 31st March, 2026'),'Q4 FY2026')
         self.assertEqual(worker.verified_period('earnings_call','Company quarterly-results/2026-2027/q2.html'),'Q2 FY2027')
         self.assertEqual(worker.document_period('https://issuer.test/infosys-ar-26.pdf','','Reports 2020'),'2026')
 

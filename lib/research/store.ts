@@ -86,7 +86,7 @@ export async function readPassages(ticker:string,ids:string[]):Promise<ResearchP
   return results.filter((p):p is ResearchPassage=>!!p);
 }
 export async function sourceVersion(ticker:string){
-  const rows=await database().prepare("SELECT id,active_version FROM research_documents WHERE ticker=? AND active_version IS NOT NULL ORDER BY id").bind(ticker).all();
+  const rows=await database().prepare("SELECT id,active_version,period,type,title,source_url FROM research_documents WHERE ticker=? AND active_version IS NOT NULL ORDER BY id").bind(ticker).all();
   return hash(JSON.stringify(rows.results));
 }
 export async function evidenceSnapshot(ticker:string,question:string,filters:ResearchFilters={}){
@@ -104,7 +104,7 @@ export async function synchronizeCompany(ticker:string,error:string|null=null){
   const db=database(),docs=await documents(ticker),indexed=docs.filter(d=>d.active_version);
   const annuals=new Set(indexed.filter(d=>d.type==='annual_report'&&/^FY20\d{2}$/.test(d.period)).map(d=>d.period)).size;
   const calls=new Set(indexed.filter(d=>d.type==='earnings_call'&&/^Q[1-4] FY20\d{2}$/.test(d.period)).map(d=>d.period)).size;
-  const ready=annuals>=2&&calls>=6&&indexed.every(d=>d.status==='ready');
+  const ready=annuals>=2&&calls>=6&&indexed.every(d=>d.status==='ready'&&(d.type==='annual_report'?/^FY20\d{2}$/:/^Q[1-4] FY20\d{2}$/).test(d.period));
   const active=await db.prepare("SELECT id FROM research_jobs WHERE ticker=? AND status IN ('queued','running','retry') LIMIT 1").bind(ticker).first();
   const status=ready?'ready':indexed.length?'partial':active?'preparing':'failed';
   await db.prepare('UPDATE research_companies SET status=?,error=?,updated_at=? WHERE ticker=?').bind(status,error||(!ready?'Coverage is incomplete or some pages have no usable text; inspect sources and diagnostics.':null),stamp(),ticker).run();
@@ -115,7 +115,7 @@ export async function workerStatus(){
   const online=!!row&&Date.now()-Date.parse(row.last_seen)<300000;
   return {online,modelReady:online&&row.model_ready===1,lastSeen:row?.last_seen||null,...parse<Record<string,unknown>>(row?.data,{})};
 }
-export function hydrateQuestion(q:any):ResearchQuestion{return {...q,answer:parse(q.answer,null),context:parse(q.context,[])};}
+export function hydrateQuestion(q:any):ResearchQuestion{return {...q,filters:parse(q.filters,{}),answer:parse(q.answer,null),context:parse(q.context,[])};}
 export async function refreshQuestion(id:string,owner:string){
   const db=database(),q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND owner=?").bind(id,owner).first<any>();
   if(!q)return null;

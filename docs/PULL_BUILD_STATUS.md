@@ -54,7 +54,7 @@ explicit retry and never repeats automatically.
 Research protocol tests cover authorization, leases/replay, original storage,
 atomic publication and metadata, annual alias retirement, historical PDFs,
 issuer/type/year filtering, retrieval ranking/diversity, model-off evidence,
-answer/citation validation, caching and directory fallback. Fifteen Linux worker
+answer/citation validation, caching and directory fallback. Sixteen Linux worker
 tests cover URL, memory, document, period, conversion, disabled-model guards and
 private failure diagnostics, staged indexing recovery and serial question
 checkpoints after conversion. Staged uploads resume only a contiguous ordinal
@@ -129,7 +129,22 @@ because its selected passages lacked the total row; it did not substitute the
 standalone figure. Original-page inspection located the consolidated total in a
 different chunk on PDF page 142. Retrieval now gives the net-operating-cash row
 and explicitly requested accounting scope priority over a table heading, and the
-retrieval cache contract is `fts-neighbours-4`. This requires a fresh live check.
+retrieval cache contract is `fts-neighbours-4`. The fresh live request returned
+INR 1,92,113 crore for the year ended 31 March 2026, matching the original row.
+It completed during resumed ingestion under the unchanged memory cap, with zero
+automatic restarts. This is a numerical answer check, not generic calculation
+support; the model still cannot invent ratios or calculate from unchecked facts.
+
+Retained active transcripts are rechecked even after six new eligible quarters
+have been found. This prevents an older Investor AI Day from surviving merely
+because discovery filled the target first. The period verifier recognizes
+"quarter and financial year ended". A verified period correction is persisted
+to the active document/version metadata and changes the source-version cache
+hash. Readiness requires verified source periods. Alternate formats for one
+period are deduplicated; valid historical periods remain searchable and originals
+are retained. Policy `quarterly-dialogue-2` versions this eligibility/period check.
+Research history restores the saved year/source filters, and multiple quotes
+from one passage produce one source button per finding.
 
 ## Operations and recovery
 

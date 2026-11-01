@@ -4,7 +4,7 @@ export type ResearchPassage={id:string;document_id:string;ticker:string;page:num
 export type ResearchFilters={period?:string;types?:string[]};
 export type ResearchFinding={text:string;citations:{chunkId:string;quote:string}[]};
 export type ResearchAnswer={summary:string;findings:ResearchFinding[];missingEvidence:string[];model:string;createdAt:string};
-export type ResearchQuestion={id:string;ticker:string;question:string;status:string;answer:ResearchAnswer|null;context:ResearchPassage[];error:string|null;created_at:string;updated_at:string;cached?:boolean};
+export type ResearchQuestion={id:string;ticker:string;question:string;filters:ResearchFilters;status:string;answer:ResearchAnswer|null;context:ResearchPassage[];error:string|null;created_at:string;updated_at:string;cached?:boolean};
 export const seedResearchCompanies=[
   {ticker:"RELIANCE",name:"Reliance Industries",isin:"INE002A01018",sources:["https://www.ril.com/investors/financial-reporting","https://www.ril.com/investors/events-presentations"]},
   {ticker:"TCS",name:"Tata Consultancy Services",isin:"INE467B01029",sources:["https://www.tcs.com/investor-relations"]},

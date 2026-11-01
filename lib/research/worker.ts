@@ -72,7 +72,7 @@ export async function researchWorkerAction(action:string,body:any){
     if(await db.prepare("SELECT id FROM research_jobs WHERE status='running' AND lease_until>? LIMIT 1").bind(now).first())return {job:null};
     const lease=crypto.randomUUID();
     const job=await db.prepare("UPDATE research_jobs SET status='running',stage='Discovering primary documents',lease=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=(SELECT id FROM research_jobs WHERE kind='prepare' AND status IN ('queued','retry') AND available_at<=? ORDER BY priority DESC,created_at LIMIT 1) AND status IN ('queued','retry') AND NOT EXISTS(SELECT 1 FROM research_jobs WHERE status='running') RETURNING *").bind(lease,new Date(Date.now()+600000).toISOString(),now,now).first<any>();
-    return {job:job?{...job,company:await company(job.ticker)}:null};
+    return {job:job?{...job,company:await company(job.ticker),documents:await documents(job.ticker)}:null};
   }
   if(action==='maintenance/yield'){
     if(typeof body.jobId!=='string'||!/^[a-f0-9-]{36}$/.test(body.jobId)||body.reason!=='worker_update')throw new Error('Choose the expected preparation job for a worker update');
@@ -106,6 +106,14 @@ export async function researchWorkerAction(action:string,body:any){
     await db.prepare("UPDATE research_questions SET status='done',answer=?,error=NULL,lease=NULL,lease_until=NULL,updated_at=? WHERE id=? AND lease=? AND status='running'").bind(JSON.stringify(answer),now,q.id,q.lease).run();return {accepted:true};
   }
   const job=await leased(body);
+  if(action==='document/verified-period'){
+    if(!identifier(body.versionId)||!text(body.period,12)||!/^Q[1-4] FY20\d{2}$/.test(body.period))throw new Error('Invalid verified call period');
+    const record=await db.prepare("SELECT d.id,v.source_metadata FROM research_documents d JOIN research_document_versions v ON v.id=d.active_version WHERE d.ticker=? AND d.type='earnings_call' AND v.id=? AND v.status IN ('ready','partial')").bind(job.ticker,body.versionId).first<{id:string;source_metadata:string}>();
+    if(!record)throw new Error('Choose an active, retained call version for period verification');
+    const issuer=await company(job.ticker),title=issuer!.name+' — Earnings call — '+body.period;
+    await db.batch([db.prepare('UPDATE research_documents SET period=?,title=?,updated_at=? WHERE id=? AND active_version=?').bind(body.period,title,now,record.id,body.versionId),db.prepare('UPDATE research_document_versions SET source_metadata=? WHERE id=?').bind(JSON.stringify({...parse(record.source_metadata,{}),period:body.period,title}),body.versionId)]);
+    await synchronizeCompany(job.ticker);return {accepted:true};
+  }
   if(action==="document/known"){
     if(!contentHash(body.hash)||!text(body.parser,100)||!["annual_report","earnings_call"].includes(body.type))throw new Error("Invalid document cache lookup");
     const known=await db.prepare("SELECT d.id,d.period,d.active_version,v.id AS version_id,v.artifact_key,v.page_count,v.readable_pages,v.chunk_count FROM research_documents d JOIN research_document_versions v ON v.document_id=d.id WHERE d.ticker=? AND d.type=? AND v.content_hash=? AND v.parser=? AND v.status IN ('ready','partial') AND (d.active_version=v.id OR (d.type='annual_report' AND d.period GLOB 'FY20[0-9][0-9]')) ORDER BY (d.active_version=v.id) DESC,v.created_at DESC LIMIT 1").bind(job.ticker,body.type,body.hash,body.parser).first<any>();
@@ -177,6 +185,19 @@ export async function researchWorkerAction(action:string,body:any){
     // every historical version/original for saved citations, but don't leave
     // sources rejected by the newer discovery/validation rules in retrieval.
     if(action==='finish'&&body.parser==='poppler-layout-pages-v2')await db.prepare("UPDATE research_documents SET active_version=NULL,status='superseded',updated_at=? WHERE ticker=? AND active_version IN (SELECT id FROM research_document_versions WHERE parser='poppler-layout-pages-v1') AND EXISTS(SELECT 1 FROM research_documents n JOIN research_document_versions v ON v.id=n.active_version WHERE n.ticker=? AND v.parser=?)").bind(now,job.ticker,job.ticker,body.parser).run();
+    if(action==='finish'){
+      const current=(await documents(job.ticker)).filter(d=>d.active_version),retire=[];
+      for(const kind of ['annual_report','earnings_call'] as const){
+        const ranked=current.filter(d=>d.type===kind&&(kind==='annual_report'?/^FY20\d{2}$/:/^Q[1-4] FY20\d{2}$/).test(d.period));
+        const rank=(period:string)=>kind==='annual_report'?Number(period.slice(2)):Number(period.slice(5))*4+Number(period[1]);
+        ranked.sort((a,b)=>rank(b.period)-rank(a.period)||Number(b.status==='ready')-Number(a.status==='ready')||b.updated_at.localeCompare(a.updated_at)||a.id.localeCompare(b.id));
+        // Keep valid historical periods searchable. Targets are minimum
+        // coverage, not permission to discard a previously indexed year.
+        const periods=new Set<string>();
+        for(const doc of ranked){if(periods.has(doc.period))retire.push(doc.id);else periods.add(doc.period);}
+      }
+      if(retire.length)await db.batch(retire.map(id=>db.prepare("UPDATE research_documents SET active_version=NULL,status='superseded',updated_at=? WHERE id=? AND ticker=?").bind(now,id,job.ticker)));
+    }
     const status=action==="failed"?job.attempts>=2?"failed":"retry":"done";
     const error=typeof body.error==="string"?body.error.slice(0,500):null;
     await db.prepare("UPDATE research_jobs SET status=?,stage=?,error=?,lease=NULL,lease_until=NULL,available_at=?,updated_at=? WHERE id=? AND lease=?").bind(status,action==="failed"?"Document preparation needs attention":"Document preparation finished",error,new Date(Date.now()+300000).toISOString(),now,job.id,job.lease).run();

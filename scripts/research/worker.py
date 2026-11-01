@@ -30,9 +30,9 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.4'
+VERSION = 'research-2.5'
 PARSER = 'poppler-layout-pages-v2'
-CALL_POLICY = 'quarterly-dialogue-1'
+CALL_POLICY = 'quarterly-dialogue-2'
 DISCOVERY_POLICY = 'primary-links-2'
 MAX_PDF = 64 * 1024 * 1024
 MAX_HTML = 3 * 1024 * 1024
@@ -221,7 +221,7 @@ def verified_period(kind, content):
             return 'Q'+match[1]+' FY20'+match[3]
         month_names='January|February|March|April|May|June|July|August|September|October|November|December'
         # Issuer filing cover letters identify the reported quarter explicitly.
-        ended = re.search(r'quarter(?:\s+and\s+(?:half|six.month|year|nine.month)(?:\s+year|\s+period)?)?\s+ended\s+(?:\d{1,2}(?:st|nd|rd|th)?\s+)?('+month_names+r')\s*(?:\d{1,2}(?:st|nd|rd|th)?)?[,\s]+(20\d{2})',opening,re.I)
+        ended = re.search(r'quarter(?:\s+and\s+(?:financial\s+year|half|six.month|year|nine.month)(?:\s+year|\s+period)?)?\s+ended\s+(?:\d{1,2}(?:st|nd|rd|th)?\s+)?('+month_names+r')\s*(?:\d{1,2}(?:st|nd|rd|th)?)?[,\s]+(20\d{2})',opening,re.I)
         if ended:
             month={name.lower():i+1 for i,name in enumerate(month_names.split('|'))}[ended[1].lower()]
             if month in (3,6,9,12):
@@ -563,6 +563,8 @@ class Worker:
         record=known['document']
         if record.get('active_version',record.get('version_id'))!=record.get('version_id'):
             self.api('document/finish',{'jobId':job['id'],'lease':job['lease'],'versionId':record['version_id'],'chunkCount':record['chunk_count']})
+        if document['type']=='earnings_call' and period and period!=record['period'] and re.fullmatch(r'Q[1-4] FY20\d{2}',period):
+            self.api('document/verified-period',{'jobId':job['id'],'lease':job['lease'],'versionId':record['version_id'],'period':period})
         return {'url':document['url'],'period':period or record['period'],'reused':True,'pages':record['page_count']}
 
     def process_document(self, job, document, seen_periods=None):
@@ -676,6 +678,9 @@ class Worker:
         else:
             candidates, diagnostics = discover(job['company'], lambda s,p: self.progress(job,s,p))
             discovery_path.write_text(json.dumps({'documents':candidates,'diagnostics':diagnostics}))
+        active_calls={d['source_url']:d for d in job.get('documents',[]) if d.get('active_version') and d['type']=='earnings_call'}
+        candidate_urls={d['url'] for d in candidates}
+        candidates=list(candidates)+[{'url':url,'title':d['title'],'type':'earnings_call','period':d['period']} for url,d in active_calls.items() if url not in candidate_urls]
         completed, failures, exclusions = [], [], []
         counts = {'annual_report':0,'earnings_call':0}
         periods = {'annual_report':set(),'earnings_call':set()}
@@ -684,7 +689,7 @@ class Worker:
             if self.model_enabled:
                 self.progress(job,'Checking saved research questions',{'completed':len(completed),'candidates':len(candidates)})
                 self.answer_waiting_question()
-            if counts[document['type']] >= (2 if document['type']=='annual_report' else 6):
+            if counts[document['type']] >= (2 if document['type']=='annual_report' else 6) and document['url'] not in active_calls:
                 continue
             self.progress(job, 'Preparing document ' + str(i + 1) + ' of ' + str(len(candidates)), {'completed': len(completed), 'candidates': len(candidates), 'failures': failures[-8:]})
             try:

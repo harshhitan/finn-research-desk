@@ -176,5 +176,27 @@ assert.equal((await tools.searchCompanies('Persistent Systems'))[0].ticker,'PERS
 assert.equal((await tools.resolveCompany('PERSISTENT')).name,'Persistent Systems Ltd');
 assert.equal((await handleResearch(service('directory/complete',{...lookup,matches:[]}))).status,400,'Lookup completion cannot be replayed');
 globalThis.fetch=originalFetch;
+// A refresh repairs verified period metadata, revisits every retained source and
+// deduplicates formats for a period. Valid historical years/quarters stay
+// searchable, and every original remains available to saved citations.
+await store.enqueuePreparation('HINDUNILVR','alice');const selectionJob=(await call('claim')).job;
+assert.ok(Array.isArray(selectionJob.documents));const selectionIdentity={jobId:selectionJob.id,lease:selectionJob.lease};
+const selectionVersions=[];let sourceIndex=0;
+for(const [type,period] of [...['FY2024','FY2025','FY2026'].map(p=>['annual_report',p]),...['Q3 FY2025','Q4 FY2025','Q1 FY2026','Q2 FY2026','Q3 FY2026','Q4 FY2026','Q1 FY2027','Q1 FY2027','Period unverified'].map(p=>['earnings_call',p])]){
+  const digest=await store.hash(type+period+sourceIndex++),key=`research/${digest.slice(0,2)}/${digest}.pdf`;files.set(key,new Uint8Array([1]));
+  const started=await call('document/start',{...selectionIdentity,document:{title:'Hindustan Unilever '+period,type,period,url:'https://www.hul.co.in/'+digest+'.pdf',hash:digest,parser:'poppler-layout-pages-v2',pages:1,readablePages:1}});
+  await call('document/chunks',{...selectionIdentity,versionId:started.versionId,chunks:[{ordinal:0,page:1,heading:'Hindustan Unilever',text:'Hindustan Unilever reports its business operations and financial results.'}]});
+  await call('document/finish',{...selectionIdentity,versionId:started.versionId,chunkCount:1});selectionVersions.push({...started,type,period});
+}
+assert.equal((await store.company('HINDUNILVR')).status,'partial','An unverified call period prevents ready status');
+const unknownCall=selectionVersions.find(v=>v.period==='Period unverified'),beforePeriodRepair=await store.sourceVersion('HINDUNILVR');
+await call('document/verified-period',{...selectionIdentity,versionId:unknownCall.versionId,period:'Q2 FY2027'});
+assert.notEqual(await store.sourceVersion('HINDUNILVR'),beforePeriodRepair,'A period correction invalidates dependent answer caches');
+await call('finish',{...selectionIdentity,parser:'poppler-layout-pages-v2'});
+const currentSelection=(await store.documents('HINDUNILVR')).filter(d=>d.active_version);
+assert.equal(currentSelection.length,11);assert.deepEqual(currentSelection.filter(d=>d.type==='annual_report').map(d=>d.period).sort(),['FY2024','FY2025','FY2026']);
+assert.ok(currentSelection.some(d=>d.period==='Q2 FY2027'));assert.ok(currentSelection.some(d=>d.period==='Q3 FY2025'));assert.equal(currentSelection.filter(d=>d.period==='Q1 FY2027').length,1,'Alternate formats do not inflate quarterly coverage');
+assert.equal((await store.company('HINDUNILVR')).status,'ready');
+const retainedOld=selectionVersions.find(v=>v.period==='FY2024');assert.equal((await handleResearch(user('/documents/'+retainedOld.documentId+'/original?version='+retainedOld.versionId))).status,200,'Retiring an older selection preserves its cited original');
 sqlite.close();
 console.log('PASS: migration/FTS, owner/origin/worker authorization, duplicate preparation, leases/replay, original storage, atomic index publication, issuer/period/type filters, model-off retrieval, grounded answers/numbers, cache reuse and source-version invalidation.');
