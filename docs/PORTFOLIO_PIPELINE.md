@@ -117,7 +117,9 @@ The former ChatGPT cloud task `FINN portfolio monitoring`
 Collection uses `finn-collector.timer` on the Azure VM, hourly around :35 IST,
 with a Python standard-library runner and no AI agent or ChatGPT login. Operational
 source, tests and rollback instructions are in the workspace's `ops/` directory.
-The separate Codex interpretation worker remains stopped/disabled and signed out.
+The old scheduled Codex interpretation worker remains stopped/disabled.
+Separately authorized on-demand Pull answers use the research service; see
+[PULL_BUILD_STATUS.md](PULL_BUILD_STATUS.md).
 
 The timer calls `POST /api/portfolio/jobs/run?kind=collect`, then
 `GET /api/portfolio/jobs/status?kind=collect`. Both retain the existing service

@@ -66,9 +66,17 @@ async function linkedCompanyIdentity(ticker:string):Promise<Identity>{
 export async function resolveCompany(input:string){
   const symbol=canonicalTicker(input);if(!tickerPattern.test(symbol))throw new Error("Choose a valid NSE ticker from company search");
   const existing=await company(symbol);if(existing)return existing;
+  const alias=await database().prepare('SELECT data FROM provider_cache WHERE key=?').bind('research-company-alias:'+symbol).first<{data:string}>();
+  const aliased=alias?await company(parse<any>(alias.data,{}).ticker||''):null;if(aliased)return aliased;
   const verified=await database().prepare("SELECT data FROM provider_cache WHERE key=?").bind('research-company-identity:'+symbol).first<{data:string}>();
   let match:Identity|undefined=verified?parse(verified.data,undefined):undefined;try{if(!match)match=(await directory()).find(c=>c.ticker===symbol);}catch{}
   if(!match)match=await linkedCompanyIdentity(symbol);
+  // A newly named symbol with the same verified ISIN is the same issuer. Keep
+  // its existing document/history identity and persist the alias across outages.
+  if(match.isin){
+    const same=await database().prepare('SELECT ticker FROM research_companies WHERE isin=? ORDER BY created_at LIMIT 1').bind(match.isin).first<{ticker:string}>();
+    if(same){await database().prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at').bind('research-company-alias:'+symbol,JSON.stringify({ticker:same.ticker,isin:match.isin}),stamp()).run();return (await company(same.ticker))!;}
+  }
   const now=stamp();
   await database().prepare("INSERT INTO research_companies(ticker,name,isin,sources,status,created_at,updated_at) VALUES(?,?,?,?,'registered',?,?) ON CONFLICT(ticker) DO NOTHING").bind(match.ticker,match.name,match.isin,JSON.stringify(match.sources),now,now).run();
   return (await company(symbol))!;
@@ -77,20 +85,32 @@ export async function searchCompanies(query:string){
   const q=query.trim().toUpperCase(),existing=await companies();if(!q)return existing;
   const matches=(c:{ticker:string;name:string})=>c.ticker.includes(q)||c.name.toUpperCase().includes(q);
   const local=existing.filter(matches);if(q.length<2||local.length)return local;
+  const alias=await database().prepare('SELECT data FROM provider_cache WHERE key=?').bind('research-company-alias:'+canonicalTicker(query)).first<{data:string}>();
+  const aliased=alias&&existing.find(c=>c.ticker===parse<any>(alias.data,{}).ticker);if(aliased)return [aliased];
   const cached=await database().prepare("SELECT data,fetched_at FROM provider_cache WHERE key=?").bind('research-company-search:'+query.trim().toLowerCase()).first<{data:string;fetched_at:string}>();
   if(cached&&Date.now()-Date.parse(cached.fetched_at)<3600000)return parse<Identity[]>(cached.data,[]).map(c=>({...c,status:'not_indexed'}));
   if(await directoryPending(query))return [];
   let rows:Identity[]=[];try{rows=(await directory()).filter(matches).slice(0,12);}catch{}
   if(!rows.length)try{rows=await searchDirectoryFallback(query);}catch{await queueDirectory(query);return [];}
-  return rows.map(c=>({...c,status:"not_indexed"}));
+  return rows.map(c=>{const indexed=existing.find(x=>x.ticker===c.ticker||!!c.isin&&x.isin===c.isin);return indexed||{...c,status:'not_indexed'};});
 }
 // Only repeated research operations are registered. These are ordinary internal
 // functions; there is no MCP server or personal-computer dependency.
-export const researchTools={
+const passageSchema={type:'object',required:['id','document_id','ticker','version_id','page','text','period','type'],properties:{id:{type:'string'},document_id:{type:'string'},ticker:{type:'string'},version_id:{type:'string'},page:{type:'integer',minimum:1},text:{type:'string'},period:{type:'string'},type:{enum:['annual_report','earnings_call']}}};
+const factsSchema={type:'object',required:['facts','candidates','gaps','sourceVersion','extractor'],properties:{facts:{type:'array',maxItems:12,items:{type:'object',required:['id','metric','period','scope','value','unit','validation','documentId','versionId','page']}},candidates:{type:'array',items:{type:'object'}},gaps:{type:'array',items:{type:'string'}},sourceVersion:{type:'string'},extractor:{type:'string'}}};
+const outputSchemas:Record<string,object>={get_company_coverage:{type:'object',required:['company','documents','jobs','counts','freshness'],properties:{company:{type:'object'},documents:{type:'array',items:{type:'object'}},jobs:{type:'array',maxItems:6,items:{type:'object'}},counts:{type:'object'},freshness:{type:'object'}}},search_corpus:{type:'array',maxItems:12,items:passageSchema},read_passages:{type:'array',maxItems:12,items:passageSchema},get_financial_facts:factsSchema,compare_facts:{type:'object',required:['facts','gaps','comparison'],properties:{facts:{type:'array',items:{type:'object'}},gaps:{type:'array',items:{type:'string'}},comparison:{type:['object','null']}}},calculate_margin:{type:'object',required:['facts','gaps','marginComparison'],properties:{facts:{type:'array',items:{type:'object'}},gaps:{type:'array',items:{type:'string'}},marginComparison:{type:['object','null']}}}};
+function withResearchContracts<T extends Record<string,{version:string;run:(...args:any[])=>Promise<any>}>>(registry:T){
+  return Object.fromEntries(Object.entries(registry).map(([name,tool])=>[name,{...tool,outputSchema:outputSchemas[name],permissions:'signed-in research visitor or authorized worker; public-source company evidence only',sideEffects:'updates bounded source caches and latest diagnostic; no model or external write',run:async(...args:any[])=>{
+    const started=Date.now(),ticker=typeof args[0]==='string'?args[0].slice(0,25):'';let outcome='error',resultCount=0;
+    try{const result=await tool.run(...args);outcome='success';resultCount=Array.isArray(result)?result.length:Array.isArray(result?.facts)?result.facts.length:Array.isArray(result?.documents)?result.documents.length:1;return result;}
+    finally{try{await database().prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at').bind('research-tool-run:'+name+':'+ticker,JSON.stringify({tool:name,version:tool.version,ticker,inputBytes:JSON.stringify(args).length,startedAt:new Date(started).toISOString(),durationMs:Math.max(0,Date.now()-started),outcome,resultCount,modelUsed:false}),stamp()).run();}catch{/* Diagnostics must never replace an otherwise usable result. */}}
+  }}])) as {[K in keyof T]:T[K]&{outputSchema:object;permissions:string;sideEffects:string}};
+}
+export const researchTools=withResearchContracts({
   calculate_margin:{version:'1',readOnly:true,location:'site',timeoutMs:20000,maxResults:1,modelUse:false,cache:'validated profit/revenue IDs and formula version',inputSchema:{type:'object',required:['ticker','scope','basePeriod','currentPeriod'],properties:{ticker:{type:'string'},scope:{enum:['consolidated','standalone']},basePeriod:{type:'string'},currentPeriod:{type:'string'}}},run:(ticker:string,scope:FinancialScope,basePeriod:string,currentPeriod:string)=>compareProfitMargins(ticker,scope,basePeriod,currentPeriod)},
   get_financial_facts:{version:'2',readOnly:true,location:'site',timeoutMs:15000,maxResults:12,modelUse:false,cache:'validated totals tied to active document versions',inputSchema:{type:'object',required:['ticker','metric','scope'],properties:{ticker:{type:'string'},metric:{enum:Object.keys(financialMetrics)},scope:{enum:['consolidated','standalone']}}},run:(ticker:string,metric:FinancialMetric,scope:FinancialScope)=>getFinancialFacts(ticker,metric,scope)},
   compare_facts:{version:'2',readOnly:true,location:'site',timeoutMs:15000,maxResults:1,modelUse:false,cache:'formula and immutable validated fact IDs',inputSchema:{type:'object',required:['ticker','metric','scope','basePeriod','currentPeriod'],properties:{ticker:{type:'string'},metric:{enum:Object.keys(financialMetrics)},scope:{enum:['consolidated','standalone']},basePeriod:{type:'string'},currentPeriod:{type:'string'}}},run:(ticker:string,metric:FinancialMetric,scope:FinancialScope,basePeriod:string,currentPeriod:string)=>compareAnnualFacts(ticker,metric,scope,basePeriod,currentPeriod)},
   get_company_coverage:{version:'1',readOnly:true,location:'site',timeoutMs:10000,maxResults:40,modelUse:false,cache:'current document versions',inputSchema:{type:'object',required:['ticker'],properties:{ticker:{type:'string',maxLength:25}}},run:(ticker:string)=>coverage(ticker)},
   search_corpus:{version:'2',readOnly:true,location:'site',timeoutMs:10000,maxResults:12,modelUse:false,cache:'FTS index of current document versions',inputSchema:{type:'object',required:['ticker','question'],properties:{ticker:{type:'string',maxLength:25},question:{type:'string',maxLength:600},filters:{type:'object'}}},run:(ticker:string,question:string,filters?:ResearchFilters)=>searchCorpus(ticker,question,filters)},
   read_passages:{version:'1',readOnly:true,location:'site',timeoutMs:10000,maxResults:12,modelUse:false,cache:'immutable passage/version IDs',inputSchema:{type:'object',required:['ticker','ids'],properties:{ticker:{type:'string',maxLength:25},ids:{type:'array',maxItems:12,items:{type:'string'}}}},run:(ticker:string,ids:string[])=>readPassages(ticker,ids)},
-};
+});

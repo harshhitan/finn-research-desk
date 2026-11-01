@@ -80,6 +80,8 @@ assert.equal((await store.searchCorpus('RELIANCE','cash conversion')).length,0,'
 assert.equal((await store.searchCorpus('TCS','cash',{period:'2025'})).length,0,'Period filtering');
 assert.equal((await store.searchCorpus('TCS','cash',{types:['earnings_call']})).length,0,'Source-type filtering');
 assert.equal((await call('evidence/check',{ticker:'TCS',query:'operating cash conversion'})).passages[0].ticker,'TCS');
+const toolRun=JSON.parse(sqlite.prepare('SELECT data FROM provider_cache WHERE key=?').get('research-tool-run:search_corpus:TCS').data);assert.equal(toolRun.outcome,'success');assert.equal(toolRun.modelUsed,false);assert.ok(toolRun.durationMs>=0);assert.equal(toolRun.question,undefined,'Tool diagnostics retain bounded metadata, not private question text');
+for(const tool of Object.values(tools.researchTools)){assert.ok(tool.inputSchema&&tool.outputSchema&&tool.permissions&&tool.sideEffects);assert.equal(tool.modelUse,false);}
 assert.equal((await handleResearch(service('evidence/check',{ticker:'TCS',query:'cash',filters:{types:['news']}}))).status,400);
 assert.equal((await store.readPassages('RELIANCE',[passages[0].id])).length,0);
 assert.equal((await handleResearch(user('/documents/'+version.documentId+'/original'))).status,200);
@@ -193,6 +195,12 @@ await call('directory/complete',{...lookup,matches:[{ticker:'PERSISTENT',name:'P
 assert.equal(await tools.directoryPending('Persistent Systems'),false);
 assert.equal((await tools.searchCompanies('Persistent Systems'))[0].ticker,'PERSISTENT');
 assert.equal((await tools.resolveCompany('PERSISTENT')).name,'Persistent Systems Ltd');
+const beforeAliasCount=(await store.companies()).length;
+sqlite.prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?)').run('research-company-identity:TCSTECH',JSON.stringify({ticker:'TCSTECH',name:'TCS renamed fixture',isin:'INE467B01029',sources:[]}),store.stamp());
+assert.equal((await tools.resolveCompany('TCSTECH.NS')).ticker,'TCS','A verified same-ISIN symbol reuses the issuer document/history identity');
+assert.equal((await store.companies()).length,beforeAliasCount,'A verified symbol alias does not increase the company count');
+sqlite.prepare('DELETE FROM provider_cache WHERE key=?').run('research-company-identity:TCSTECH');assert.equal((await tools.resolveCompany('TCSTECH')).ticker,'TCS','A persisted verified alias survives a directory outage');
+assert.equal((await tools.searchCompanies('TCSTECH'))[0].ticker,'TCS','Searching a known alias returns the indexed issuer');
 assert.equal((await handleResearch(service('directory/complete',{...lookup,matches:[]}))).status,400,'Lookup completion cannot be replayed');
 globalThis.fetch=originalFetch;
 // A refresh repairs verified period metadata, revisits every retained source and

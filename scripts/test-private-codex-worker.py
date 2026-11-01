@@ -11,6 +11,14 @@ spec.loader.exec_module(transport)
 
 
 class TransportTests(unittest.TestCase):
+    def test_process_disables_general_tools_and_limits_document_access(self):
+        with patch.object(transport.subprocess,'Popen') as process,patch.object(transport.selectors,'DefaultSelector'),patch.object(transport.Codex,'request',return_value={}),patch.object(transport.Codex,'send'):
+            transport.Codex('fixture-codex','/fixture-work')
+        arguments=process.call_args.args[0]
+        for required in ['features.shell_tool=false','features.unified_exec=false','web_search="disabled"','features.apps=false','features.browser_use=false','features.computer_use=false','features.multi_agent=false','project_doc_max_bytes=0','permissions.finn.network.enabled=false','default_permissions="finn"']:
+            self.assertIn(required,arguments)
+        self.assertIn('permissions.finn.filesystem={":minimal"="read","/fixture-work"="read"}',arguments)
+
     def client(self,events):
         instance=transport.Codex.__new__(transport.Codex)
         requests=[];sent=[];pending=iter(events)

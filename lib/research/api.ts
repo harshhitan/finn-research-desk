@@ -1,5 +1,5 @@
 import {database,session} from "../repository";
-import {askQuestion,companies,company,coverage,enqueuePreparation,hydrateQuestion,readPassages,refreshQuestion,searchCorpus,seedResearch,stamp,workerStatus} from "./store";
+import {askQuestion,companies,company,enqueuePreparation,hydrateQuestion,readPassages,refreshQuestion,seedResearch,stamp,workerStatus} from "./store";
 import {canonicalTicker,directoryPending,resolveCompany,searchCompanies,researchTools} from "./tools";
 import {artifacts,putArtifact,researchWorkerAction,workerAuthorised} from "./worker";
 import type {ResearchFilters} from "./types";
@@ -40,11 +40,11 @@ export async function handleResearch(request:Request){
       const body:any=await request.json(),c=await resolveCompany(String(body.ticker||""));return json({company:c,job:await enqueuePreparation(c.ticker,owner)},202);
     }
     const companyPath=path.match(/^companies\/([A-Z0-9&-]{1,25})$/);
-    if(companyPath&&request.method==="GET")return json(await coverage(companyPath[1]));
+    if(companyPath&&request.method==="GET")return json(await researchTools.get_company_coverage.run(companyPath[1]));
     if(path==="search"&&request.method==="POST"){
       const b:any=await request.json();if(typeof b.query!=="string"||b.query.length<2||b.query.length>600)throw new Error("Enter a research question between 2 and 600 characters");
       const ticker=canonicalTicker(String(b.ticker||""));if(!await company(ticker))throw new Error("Choose a research company first");
-      return json({passages:await searchCorpus(ticker,b.query,filters(b.filters))});
+      return json({passages:await researchTools.search_corpus.run(ticker,b.query,filters(b.filters))});
     }
     if(path==="questions"&&request.method==="POST"){
       const b:any=await request.json();if(typeof b.question!=="string"||b.question.trim().length<5||b.question.length>600)throw new Error("Enter a research question between 5 and 600 characters");

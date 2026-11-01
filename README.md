@@ -1,124 +1,147 @@
-# FINN — Indian portfolio monitoring and research
+# FINN — Indian portfolio monitoring and document research
 
-A responsive, installable web application monitoring 20 Indian NSE companies through exchange filings and completed-session market data. The existing Reliance research desk remains at `/research`. The product uses comparative tables, clearly stated accounting bases and inspectable evidence.
+FINN is a private, responsive web app with a 20-company NSE portfolio and an
+independent research library that grows when a user prepares another company.
 
-The portfolio pipeline now includes durable D1 jobs, source watermarks, retries,
-deduplication, user-specific rules and alerts, PDF text/cache, and an independent
-ChatGPT subscription adapter. **Hosted subscription inference remains inactive:
-FINN has no approved hosted client registration yet.** Protocol tests use mocks;
-they do not prove a live subscription connection. See
-[portfolio architecture and activation](docs/PORTFOLIO_PIPELINE.md).
+- `/`: completed-day market data, exchange announcements, persisted alerts and source health.
+- `/research`: generic company preparation, indexed annual reports/calls, cited on-demand answers and financial comparisons.
+- `/research/reliance`: the preserved original Reliance desk, curated data and charts.
 
-Portfolio checks: `npm run test:portfolio`; with a running, populated preview,
-`npm run test:portfolio-api`. Comparison checks: `npm run test:results` and
-`npm run test:results-view`. Results drawers provide source-checked Revenue,
-EBITDA, PBT and PAT comparisons when explicit period/entity evidence is available;
-they otherwise show missing evidence, not estimated values.
-The main portfolio is `/`; the endpoints are
-`/api/portfolio`, `/rules`, `/refresh`, `/jobs/tick`, protected `/jobs/run` and
-`/jobs/status`, `/filings/{id}/content`, `/filings/{id}/analyse`,
-`/filings/{id}/results`, and
-`/chatgpt/{status,start,callback,disconnect}` under `/api/portfolio`.
+Live app: https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site/research
 
-## Implemented
+## Pull implementation
 
-- Company overview and annual revenue/EBITDA trends.
-- Annual and quarterly consolidated statements with deterministic TypeScript calculations, reported QoQ/YoY comparisons, and cash conversion.
-- Live public Yahoo EOD adapter, completed-session filtering, prior-20-session volume baseline and split safeguards; provider failures preserve the last successful data.
-- Reliance issuer announcements, stable URL hashes, persistent caching, title-based classification, materiality ordering, routine-item collapse, date/category filters and original filing links.
-- Eight research pathways based on the assignment reference: business, financials, cash quality, balance sheet, management guidance, risks/governance, trajectory and bull/bear interpretations.
-- Server-side passage retrieval over a verified Reliance annual-report/transcript corpus. Research returns up to three sourced observations, numerical calculations where supported, and explicit evidence gaps.
-- Source drawer with printed/PDF page distinctions, original URLs and company-report definitions; glossary, saved source passages/documents and persisted research history.
-- Issuer-filing drawers fetch the original PDF on demand, extract and cache page text, show a key passage where a subject is identifiable, and link to the exact PDF page. Scanned, blocked or oversized documents show an explicit reason and a retry/original action.
-- In-app alert preferences and durable, deduplicated alert triggers. Observation polling runs while the app is open.
-- Responsive desktop and phone layouts, bottom navigation, accessible dialog dismissal/focus containment and a web-app manifest.
-- Chart lab: source-checked revenue/profitability, profit vs. operating cash, net debt, segment EBITDA and completed-session price/volume. Annual or filing-based quarterly comparison where verified; automatic supporting charts on relevant research answers. Every point exposes its provenance, units, accounting basis and any calculation inputs. CSV and standalone SVG exports include the evidence.
+Six seed companies are prepared through one pipeline: RELIANCE, TCS, INFY,
+HINDUNILVR, LT and NTPC. COFORGE was added through actual company search with no
+company-specific code change. The library has seven registered issuers; three
+are ready and four remain partial for real page-readability gaps. Readiness
+requires two current consecutive annual years and six recent quarterly calls.
+Historical evidence stays searchable without inflating recent coverage.
 
-## Architecture
+The app discovers issuer/exchange originals, verifies identity/type/period,
+hashes and converts PDFs, stages page-aware chunks, and publishes a versioned
+D1 FTS5 index. R2 stores originals and conversion artifacts. Source filters,
+missing evidence, extraction quality, job progress and historical originals are
+inspectable. NSE suffix aliases reuse their issuer; another verified symbol with
+the same ISIN reuses the existing document/history identity instead of increasing
+the company count. Unknown ISINs are not invented or merged by name.
 
-React/TypeScript through Vinext, deployed as one Cloudflare Worker using Sites. D1 stores per-user/session preferences, saved records, research history, provider caches and alerts. The verified research index is a versioned source file in `data/reliance.json`.
+Ordinary internal functions provide coverage, corpus search, passage reading,
+financial facts, comparisons and margin calculations. Contracts declare JSON
+input/output schemas, permissions, bounds and side effects. Bounded latest-run
+diagnostics retain duration/outcome without private question text. The controller resolves
+companies and queues preparation. No MCP server, embeddings service or personal-PC
+runtime is required. A separate outbound Python systemd worker runs on the VM.
+It uses standard-library Python, Poppler and bounded selected-page Tesseract,
+with one serial workload. Heavy layout models are omitted for this VM's capacity.
 
-This replaces the proposed separate FastAPI/Supabase deployment for this first single-company release. One deployable application gives a usable backend without requiring the user to configure model or database credentials. Research is **extractive and deterministic**, not an undisclosed LLM simulation. It does not need a model key. Source and accounting limitations are explicit in the UI and in [data/SOURCE_NOTES.md](./data/SOURCE_NOTES.md).
+Model synthesis runs only for a saved user question. The owner explicitly enabled
+it and completed VM device sign-in. The restricted Codex transport disables shell,
+web, apps, browser, computer and multi-agent tools, limits document filesystem
+access, and denies model-requested tools/approvals. Answers require source quotes,
+known passage IDs and supported numbers. Failed inference needs explicit retry.
+New successful answers retain provider-reported token usage. Owner-scoped caches
+include source versions, model and prompt/retrieval/validation contracts.
+
+Financial extraction supports reported operating/investing/financing cash flow,
+revenue from operations, profit for the period and profit before tax. Explicit
+table columns, periods, INR units and accounting scope are required. Uncertain
+bases remain candidates. Code computes compatible annual YoY, quarterly YoY,
+QoQ, unit conversions and reported profit/operating-revenue margins with source
+fact dependencies and formulas. Missing tables, mixed durations, scope conflicts
+and unsupported inputs cause abstention; a narrative mention is not a verified
+financial fact. This is a prototype with bounded parser support, not universal
+accounting extraction or investment advice.
+
+## Runtime and verification
+
+The research VM has 892 MiB RAM. The service uses a 256 MiB memory cap, 192 MiB
+pressure limit, 128 MiB swap cap, one-CPU quota, serial conversion/inference and
+available-memory guards. Observed full runs peaked around 196 MiB, with zero
+automatic restarts and no OOM kills. The scheduled model worker is disabled and
+the cloud monitoring automation is paused. The collection-only VM timer remains
+enabled and does not invoke a model. On-demand work can finish after closing the
+browser; it depends on the VM being running, not the personal computer.
+
+Real cited answers were accepted for Reliance, TCS, Infosys, HUL and Coforge.
+The current-contract TCS numerical question repeated as SAVED ANSWER. A fresh
+Infosys answer persisted actual provider usage. The 30-case source review found
+no company/type/year violations: 21 supported/qualified cases, six partial cases
+with explicit limitations and three expected missing-year cases. Retrieval
+support is not a guarantee that every generated interpretation is correct.
+
+See [build status](docs/PULL_BUILD_STATUS.md),
+[operations and recovery](docs/PULL_OPERATIONS.md),
+[source-review ledger](docs/PULL_RETRIEVAL_REVIEW.json),
+[portfolio implementation](docs/PORTFOLIO_PIPELINE.md) and
+[build history](docs/BUILD_HISTORY.md).
 
 ## Local setup
 
-Requires Node >=22.13, npm, Git and tar. From this directory:
+Tested with Node 24 on Windows and Python 3.12 on Ubuntu. The document worker runs
+on Linux; its resource limits are not a Windows runtime.
 
 ```powershell
 npm run install:ci
 npm run build
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_common_hydra.sql
+```
+
+For a **fresh** local database, apply the generated migrations once in filename
+order. Do not replay already-applied SQL against an existing preview database.
+
+```powershell
+Get-ChildItem -LiteralPath drizzle -Filter *.sql | Sort-Object Name | ForEach-Object {
+  node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file $_.FullName
+  if ($LASTEXITCODE -ne 0) { throw "Local migration failed" }
+}
 npm run dev -- --hostname 127.0.0.1 --port 5173
 ```
 
-Open the URL printed by the dev server. Apply the migration once to a fresh local database; do not replay an already applied schema. Dev and built preview share `.wrangler/state`. To preview a completed build, use `npm start` instead of `npm run dev`.
+Use the printed local URL. Local preview has separate D1/R2 state and does not
+inherit production documents or authentication. No model API key belongs in the
+frontend or repository. Hosting identity and DB/BUCKET bindings are declared in
+`.openai/hosting.json`; production secrets stay in Sites/VM protected configuration.
 
-No model API key is required. Optional `FINN_TEST_URL` changes the API test origin; it defaults to `http://127.0.0.1:5173`. Private hosting supplies a signed-in visitor ID. Local anonymous use gets an HttpOnly session cookie; clearing that cookie creates a different notebook. Database files and local environment files are ignored.
-
-## Verification
+## Checks
 
 ```powershell
 node node_modules/typescript/bin/tsc --noEmit
-node scripts/test-finance.mjs
-node scripts/test-filings.mjs
-node scripts/test-plots.mjs
-node scripts/test-plot-api.mjs
-node scripts/test-api.mjs
+node scripts/test-research.mjs
+python scripts/test-private-codex-worker.py -q
+npm test
+npm run test:portfolio
+npm run test:results
+npm run test:results-view
 ```
 
-The API test needs a running, migrated preview. It uses its own temporary session, checks persisted writes and restores its settings. Financial checks cover evidence integrity, allowed-document isolation, fiscal-period gaps, eight pathways, growth arithmetic, FCF, net debt, intraday exclusion, adjusted closes, splits and volume baselines. See [docs/VERIFICATION.md](./docs/VERIFICATION.md) for browser checks.
+On the Linux worker: `python3 -B test_worker.py -q` (24 tests). The six shared
+transport tests use mocked protocol events, no credentials or inference. The
+research suite uses an isolated SQLite database and checks real migrations,
+authorization, versioned publication, recovery, source filters, answer validation,
+cache invalidation, aliases, financial extraction and exact calculations.
 
-## API
+## Research API
 
-| Endpoint | Purpose |
+All visitor research routes require sign-in and same-origin writes.
+
+| Route | Purpose |
 | --- | --- |
-| `GET /api/health` | Database and research mode health |
-| `GET /api/bootstrap` | Corpus, saved items, rules, cached filings and alerts |
-| `GET /api/market` | Market + issuer refresh subject to cache; evaluate new observations |
-| `GET /api/briefing?from=&to=` | Windowed records with source coverage |
-| `POST /api/research` | `{question, ticker:"RELIANCE", topic?}` sourced research |
-| `GET /api/research/history` | Visitor's last 20 research runs |
-| `GET /api/evidence/{id}` | Source passage and parent document |
-| `GET /api/documents/{issuer-id}/content` | Extracted original filing text, page references and extraction status |
-| `GET /api/plots` | Available recipes and the `plot_verified_data` tool contract |
-| `POST /api/plots` | Build a plot from a recipe, frequency, context, optional ticker and ISO date window |
-| `GET /api/plots/export?...&format=csv|svg` | Download values/provenance or a standalone vector chart |
-| `GET/POST /api/saved` | Read/toggle source or filing saves |
-| `GET/PUT /api/alert-rules` | Read/validate/persist preferences |
-| `POST /api/refresh` | Bounded manual refresh, one-minute cooldown |
+| `GET /api/research` | Library counts, worker availability and internal tool names |
+| `GET /api/research/companies/search?q=...` | Existing or verified new company lookup |
+| `POST /api/research/companies/prepare` | Create or reuse a durable preparation job |
+| `GET /api/research/companies/{ticker}` | Current documents, periods, readiness, progress and failures |
+| `POST /api/research/search` | Company/year/type-scoped evidence retrieval without a model |
+| `POST /api/research/questions` | Cache reuse or a saved on-demand research request |
+| `GET /api/research/questions/{id}` | Owner-bound request/answer status |
+| `POST /api/research/questions/{id}/retry` | Explicit retry of a failed request |
+| `GET /api/research/history?ticker=...` | Owner-bound saved questions/answers |
+| `POST /api/research/facts` | Source-versioned financial totals and validation gaps |
+| `POST /api/research/facts/compare` | Compatible annual/quarterly changes |
+| `POST /api/research/facts/margin` | Verified profit/operating-revenue ratio comparison |
+| `GET /api/research/documents/{id}/original?version=...` | Authenticated original PDF with ranges/HEAD |
 
-Writes reject mismatched Origin headers. SQL values use bound parameters, records are scoped to signed-in ID/session, research input is bounded and rate limited, and retrieval does not execute document instructions.
-
-## Monitoring and freshness
-
-UI polling: 60 seconds while open. Server-side public-price cache: one hour. Issuer-announcement cache: ten minutes. These are best-effort checks, not exchange streaming or background device notifications. A manual source check bypasses normal provider cache age, subject to cooldown. Price-rule changes apply only to observations fetched after the change. Announcement rules apply to newly observed material records within the last day; issuer dates have day precision.
-
-Announcement retrieval covers the latest issuer page, retaining previously observed records (up to 100). It does not claim exhaustive NSE/BSE coverage. New attachments are linked and classified by title, not silently treated as indexed research evidence. Research remains restricted to allowed annual reports and transcripts.
-
-Opening an issuer filing now loads its PDF text into the drawer. Successful extraction is cached for 24 hours with a SHA-256 content hash; source errors are briefly cached and may be retried. Extraction accepts only known indexed Reliance filing IDs and allowlisted source hosts, with bounded bytes/pages/text and no document-script execution. It does not add issuer filings to the pull-research corpus.
-
-## Plotting contract
-
-Example request: `{"kind":"cash-quality","frequency":"annual","ticker":"RELIANCE","context":"explore"}`. Optional `from`/`to` dates filter reporting-period ends or market-session dates. The endpoint accepts **no caller-supplied numerical values**, estimates or forecast arrays.
-
-Chart construction matches raw values against metric- and period-specific primary-source fact paths. Missing facts, source conflicts, mixed units, unavailable periods and unsupported comparisons produce gaps or an unavailable state. Ratios expose their exact validated inputs and formula. Research-context charts retain the permitted annual-report/transcript restriction; quarterly results-filing and market charts are explicitly separate exploratory views. Quarterly lines break across missing quarters instead of joining unobserved periods. No smoothing or interpolation is used to manufacture intermediate data.
-
-The Q1 FY2027 filing comparison table was rechecked from the actual results PDF before plotting quarterly figures. Its prior-Q1 EBITDA excludes the disclosed investment-sale gain; this adjustment is retained in the plot basis, not mixed into reported annual figures. Segment EBITDA is a business-level comparison, not a revenue-share pie.
-
-Candlesticks are withheld because the current market store does not include verified OHLC. Guidance plots are withheld until numerical targets and actuals can be aligned by metric, scope, unit and horizon. SVG metadata and CSV rows include source URLs, fact paths, page/section references and calculation inputs. Exports are served as standard HTTP attachments so they work without browser-specific blob handling.
-
-## Scope and limitations
-
-- This release deliberately covers one company, Reliance; other tickers are explicitly rejected.
-- The research corpus has 12 source entries and 22 evidence records, including sections from the same annual report. It is not 12 separate annual reports.
-- FY2024–FY2026 annual highlights are verified; fuller statement details cover FY2025/FY2026. Latest verified research quarter is Q1 FY2027, ended June 2026. This does not assert that no later filing exists.
-- Four-quarter promise outcomes are not established. Actual forward statements show pending/non-comparable/missing states rather than invented scores.
-- Source extracts are concise factual indexes/paraphrases. Open the report for complete notes and auditor matters.
-- No trades, holdings/P&L, broker connections, email alerts, native binary or background push delivery.
-
-## Deployment and source
-
-`.openai/hosting.json` retains the Sites identity and `DB` binding. Use the Sites source workflow to commit/push, build/package the exact revision and deploy privately. D1 migrations are applied by the host before upload. Do not put secrets into the source manifest. The source helper initializes and syncs the managed source repository; the final deployment is tied to its returned commit SHA.
-
-Build decisions and history pointers: [docs/BUILD_HISTORY.md](./docs/BUILD_HISTORY.md).
-
+The service-authenticated `/api/research/worker/*` protocol handles only bounded
+research jobs/artifacts and diagnostics. It cannot read visitor question history
+through the original-document verification exception. The old deterministic
+Reliance answer routes are retained at `/api/legacy-research` and
+`/api/legacy-research/history`.
