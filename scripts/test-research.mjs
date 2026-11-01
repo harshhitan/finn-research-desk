@@ -77,5 +77,19 @@ assert.equal((await store.searchCorpus('TCS','cash'))[0].version_id,version.vers
 await call('document/chunks',{jobId:second.id,lease:second.lease,versionId:v2.versionId,chunks});
 await call('document/finish',{jobId:second.id,lease:second.lease,versionId:v2.versionId,chunkCount:2});
 const changed=await store.askQuestion('alice','TCS','What is operating cash flow?');assert.notEqual(changed.id,cached.id);assert.notEqual(changed.cached,true);
+// Company onboarding remains available when the downloadable NSE directory is
+// down. Search hints must be followed by a matching linked exchange identity.
+const originalFetch=globalThis.fetch;let searchFetches=0;
+globalThis.fetch=async input=>{
+  const url=String(input);
+  if(url.includes('EQUITY_L.csv'))return new Response('',{status:503});
+  if(url.includes('/api/company/search/')){searchFetches++;return Response.json([{name:'Coforge Ltd',url:'/company/COFORGE/consolidated/'},{name:'Ignore external result',url:'https://other.test/company/BAD/'}]);}
+  return new Response('<h1><span>Coforge Ltd</span></h1><a href="https://www.nseindia.com/get-quotes/equity?symbol=COFORGE">NSE</a><a href="https://www.coforge.com/">coforge.com</a>',{headers:{'Content-Type':'text/html'}});
+};
+assert.equal((await tools.searchCompanies('Coforge'))[0].ticker,'COFORGE');
+assert.equal((await tools.searchCompanies('Coforge')).length,1);assert.equal(searchFetches,1,'Directory search hints are cached');
+const newCompany=await tools.resolveCompany('COFORGE');assert.equal(newCompany.name,'Coforge Ltd');assert.equal(newCompany.isin,'','An unavailable ISIN is not invented');assert.deepEqual(newCompany.sources,['https://www.coforge.com/']);
+await assert.rejects(()=>tools.resolveCompany('WRONG'),/matching linked NSE identity/);
+globalThis.fetch=originalFetch;
 sqlite.close();
 console.log('PASS: migration/FTS, owner/origin/worker authorization, duplicate preparation, leases/replay, original storage, atomic index publication, issuer/period/type filters, model-off retrieval, grounded answers/numbers, cache reuse and source-version invalidation.');
