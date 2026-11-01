@@ -55,6 +55,11 @@ const crowded=Array.from({length:12},(_,i)=>({...passages[0],id:'noise'+i,page:8
 const relevant={...passages[0],id:'operating',page:10,text:'Consolidated cash flows from operating activities and cash conversion. Actual reported operating cash generation.'};
 const ranked=store.rankPassages([...crowded,relevant],'What does the company report about operating cash flow and cash conversion?');
 assert.equal(ranked[0].id,'operating','Operating-cash evidence outranks incidental cash mentions');assert.equal(ranked.length,2,'One passage per source page');
+const totalQuestion='What was net cash from operating activities in the FY2026 consolidated cash flow statement? State the reporting period and units.';
+const consolidatedTotal={...relevant,id:'consolidated-total',heading:'Consolidated Financial Statements',text:'Net Cash Flow from Operating Activities * 1,92,113 1,78,703'};
+const tableHeading={...relevant,id:'table-heading',text:'Consolidated cash flow statement for the year ended 31 March 2026. Reporting period and units in crore. Cash Flow from Operating Activities.'};
+const standaloneTotal={...consolidatedTotal,id:'standalone-total',page:11,heading:'Standalone Financial Statements',text:'Net Cash Flow from Operating Activities 79,059 79,392. Reporting period and units in the FY2026 cash flow statement.'};
+assert.equal(store.rankPassages([tableHeading,standaloneTotal,consolidatedTotal],totalQuestion)[0].id,'consolidated-total','Return the actual consolidated total row before a matching table heading or standalone figure');
 assert.equal(store.annualPeriod('Q2 2026'),'FY2026');assert.equal(store.annualPeriod('2025-26'),'FY2026');
 assert.equal((await store.searchCorpus('RELIANCE','cash conversion')).length,0,'Issuer isolation');
 assert.equal((await store.searchCorpus('TCS','cash',{period:'2025'})).length,0,'Period filtering');

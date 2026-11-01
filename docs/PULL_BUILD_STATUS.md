@@ -124,6 +124,12 @@ timestamps cannot invalidate the daily discovery cache.
 Background connection errors have a separate, self-clearing status. Coverage
 refresh retries even when the initial load fails, and successful question polling
 clears its connection warning without clearing an unrelated user-action error.
+The first FY2026 Reliance consolidated-cash question correctly withheld a value
+because its selected passages lacked the total row; it did not substitute the
+standalone figure. Original-page inspection located the consolidated total in a
+different chunk on PDF page 142. Retrieval now gives the net-operating-cash row
+and explicitly requested accounting scope priority over a table heading, and the
+retrieval cache contract is `fts-neighbours-4`. This requires a fresh live check.
 
 ## Operations and recovery
 

@@ -59,7 +59,7 @@ export async function searchCorpus(ticker:string,question:string,filters:Researc
     AND (? IS NULL OR d.period LIKE ?) ORDER BY bm25(research_chunk_fts) LIMIT ?`)
     .bind(match,ticker,types[0]||"",types[1]||types[0]||"",period,period?"%"+period+"%":null,count).all<ResearchPassage>();
   const cash=/cash/i.test(question)&&/operating|conversion/i.test(question);
-  const results=await Promise.all([query(expression,80),...(cash?[query('"cash" AND ("operating" OR "conversion")',40)]:[])]);
+  const results=await Promise.all([query(expression,80),...(cash?[query('"cash" AND ("operating" OR "conversion")',40),query('"net" AND "cash" AND "operating"',40)]:[])]);
   const unique=new Map<string,ResearchPassage>();for(const rows of results.reverse())for(const p of rows.results)if(!unique.has(p.id))unique.set(p.id,p);
   const maximum=Math.max(1,Math.min(12,limit)),selected=rankPassages([...unique.values()],question,Math.max(1,maximum-4));
   // Table headers/units and continuation rows often live in adjacent chunks on
@@ -71,8 +71,10 @@ export async function searchCorpus(ticker:string,question:string,filters:Researc
 export function rankPassages(rows:ResearchPassage[],question:string,limit=10){
   const terms=(question.toLowerCase().match(/[a-z][a-z0-9]{1,30}/g)||[]).filter(w=>!stop.has(w));
   const cash=/cash|conversion/i.test(question),operating=/operating|conversion/i.test(question);
+  const scope=/\bconsolidated\b/i.test(question)&&!/\bstandalone\b/i.test(question)?'consolidated':/\bstandalone\b/i.test(question)&&!/\bconsolidated\b/i.test(question)?'standalone':null;
   const scored=rows.map((p,i)=>{const text=p.text.toLowerCase().replace(/\s+/g,' ');let score=terms.reduce((s,w)=>s+(text.includes(w)?4:0),0)+8/(1+i/5);
-    if(cash&&operating){if(/cash\s*(?:flows?)?\s*(?:from|generated\s*(?:from|by))?\s*operating\s*activities|operating\s*cash\s*flows?|cash\s*conversion/.test(text))score+=28;if(/net\s+cash\s+(?:flow\s+)?(?:generated\s+from|provided\s+by|from)\s+operating/.test(text))score+=14;if(/cash\s*flow\s*statement|statement\s*of\s*cash\s*flows/.test(text))score+=8;}
+    if(cash&&operating){if(/cash\s*(?:flows?)?\s*(?:from|generated\s*(?:from|by))?\s*operating\s*activities|operating\s*cash\s*flows?|cash\s*conversion/.test(text))score+=28;if(/net\s+cash\s+(?:flows?\s+)?(?:generated\s+from|provided\s+by|from)\s+operating/.test(text))score+=36;if(/cash\s*flow\s*statement|statement\s*of\s*cash\s*flows/.test(text))score+=8;}
+    if(scope){const heading=(p.heading+' '+p.text.slice(0,120)).toLowerCase();if(new RegExp('\\b'+scope+'\\b').test(heading))score+=20;if(new RegExp('\\b'+(scope==='consolidated'?'standalone':'consolidated')+'\\b').test(heading))score-=20;}
     return {p,score};}).sort((a,b)=>b.score-a.score);
   const selected:ResearchPassage[]=[],pages=new Set<string>(),texts=new Set<string>(),counts=new Map<string,number>();
   for(const {p} of scored){const page=p.document_id+':'+p.page,key=p.text.replace(/\s+/g,' ').slice(0,400);if(pages.has(page)||texts.has(key)||(counts.get(p.document_id)||0)>=4)continue;selected.push(p);pages.add(page);texts.add(key);counts.set(p.document_id,(counts.get(p.document_id)||0)+1);if(selected.length>=Math.max(1,Math.min(12,limit)))break;}
@@ -96,7 +98,7 @@ export async function evidenceSnapshot(ticker:string,question:string,filters:Res
 }
 export async function questionCacheKey(ticker:string,question:string,filters:ResearchFilters,version:string){
   const normalized={...(filters.period?{period:filters.period}:{}),...(filters.types?{types:[...new Set(filters.types)].sort()}: {})};
-  return hash(JSON.stringify([ticker,question.trim().replace(/\s+/g,' ').toLowerCase(),normalized,version,{prompt:'research-2',retrieval:'fts-neighbours-3',validation:'citations-2',model:(env as unknown as Record<string,unknown>).FINN_PRIVATE_CODEX_MODEL||'Codex'}]));
+  return hash(JSON.stringify([ticker,question.trim().replace(/\s+/g,' ').toLowerCase(),normalized,version,{prompt:'research-2',retrieval:'fts-neighbours-4',validation:'citations-2',model:(env as unknown as Record<string,unknown>).FINN_PRIVATE_CODEX_MODEL||'Codex'}]));
 }
 export async function synchronizeCompany(ticker:string,error:string|null=null){
   const db=database(),docs=await documents(ticker),indexed=docs.filter(d=>d.active_version);
