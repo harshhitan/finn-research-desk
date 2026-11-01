@@ -60,13 +60,18 @@ export async function searchCorpus(ticker:string,question:string,filters:Researc
   const cash=/cash/i.test(question)&&/operating|conversion/i.test(question);
   const results=await Promise.all([query(expression,80),...(cash?[query('"cash" AND ("operating" OR "conversion")',40)]:[])]);
   const unique=new Map<string,ResearchPassage>();for(const rows of results.reverse())for(const p of rows.results)if(!unique.has(p.id))unique.set(p.id,p);
-  return rankPassages([...unique.values()],question,limit);
+  const maximum=Math.max(1,Math.min(12,limit)),selected=rankPassages([...unique.values()],question,Math.max(1,maximum-4));
+  // Table headers/units and continuation rows often live in adjacent chunks on
+  // the same PDF page. Return their actual IDs, never invent a merged citation.
+  const context=await Promise.all(selected.slice(0,2).map(p=>database().prepare("SELECT c.*,d.title,d.period,d.type,d.source_url FROM research_chunks c JOIN research_documents d ON d.id=c.document_id AND d.active_version=c.version_id WHERE c.document_id=? AND c.version_id=? AND c.page=? AND c.id!=? ORDER BY CASE WHEN c.ordinal=(SELECT MIN(h.ordinal) FROM research_chunks h WHERE h.version_id=c.version_id AND h.page=c.page) THEN 0 ELSE 1 END,ABS(c.ordinal-(SELECT ordinal FROM research_chunks WHERE id=?)) LIMIT 2").bind(p.document_id,p.version_id,p.page,p.id,p.id).all<ResearchPassage>()));
+  const result=[...selected];for(const group of context)for(const p of group.results)if(result.length<maximum&&!result.some(x=>x.id===p.id))result.push(p);
+  return result;
 }
 export function rankPassages(rows:ResearchPassage[],question:string,limit=10){
   const terms=(question.toLowerCase().match(/[a-z][a-z0-9]{1,30}/g)||[]).filter(w=>!stop.has(w));
   const cash=/cash|conversion/i.test(question),operating=/operating|conversion/i.test(question);
   const scored=rows.map((p,i)=>{const text=p.text.toLowerCase().replace(/\s+/g,' ');let score=terms.reduce((s,w)=>s+(text.includes(w)?4:0),0)+8/(1+i/5);
-    if(cash&&operating){if(/cash\s*(?:flows?)?\s*(?:from|generated\s*(?:from|by))?\s*operating\s*activities|operating\s*cash\s*flows?|cash\s*conversion/.test(text))score+=28;if(/cash\s*flow\s*statement|statement\s*of\s*cash\s*flows/.test(text))score+=8;}
+    if(cash&&operating){if(/cash\s*(?:flows?)?\s*(?:from|generated\s*(?:from|by))?\s*operating\s*activities|operating\s*cash\s*flows?|cash\s*conversion/.test(text))score+=28;if(/net\s+cash\s+(?:flow\s+)?(?:generated\s+from|provided\s+by|from)\s+operating/.test(text))score+=14;if(/cash\s*flow\s*statement|statement\s*of\s*cash\s*flows/.test(text))score+=8;}
     return {p,score};}).sort((a,b)=>b.score-a.score);
   const selected:ResearchPassage[]=[],pages=new Set<string>(),texts=new Set<string>(),counts=new Map<string,number>();
   for(const {p} of scored){const page=p.document_id+':'+p.page,key=p.text.replace(/\s+/g,' ').slice(0,400);if(pages.has(page)||texts.has(key)||(counts.get(p.document_id)||0)>=4)continue;selected.push(p);pages.add(page);texts.add(key);counts.set(p.document_id,(counts.get(p.document_id)||0)+1);if(selected.length>=Math.max(1,Math.min(12,limit)))break;}

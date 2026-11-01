@@ -82,10 +82,12 @@ const hash2=await store.hash('changed fixture');files.set(`research/${hash2.slic
 const v2=await call('document/start',{jobId:second.id,lease:second.lease,document:{...metadata,hash:hash2,period:'FY2026',title:'Verified cover title',url:'https://www.tcs.com/replacement.pdf'}});
 assert.equal((await store.searchCorpus('TCS','cash'))[0].version_id,version.versionId,'Old working version remains available while replacement is staged');
 assert.equal((await store.searchCorpus('TCS','cash'))[0].source_url,metadata.url,'Staged metadata cannot change a published citation');
-await call('document/chunks',{jobId:second.id,lease:second.lease,versionId:v2.versionId,chunks});
-await call('document/finish',{jobId:second.id,lease:second.lease,versionId:v2.versionId,chunkCount:2});
+const continued=[...chunks,{ordinal:2,page:1,heading:'Cash flow statement',text:'Consolidated accounts. All amounts in INR crore. Comparative operating activities for the financial year.'},{ordinal:3,page:1,heading:'Cash flow statement',text:'Net cash generated from operating activities was 100 crore. This table continues the operating cash reconciliation.'}];
+await call('document/chunks',{jobId:second.id,lease:second.lease,versionId:v2.versionId,chunks:continued});
+await call('document/finish',{jobId:second.id,lease:second.lease,versionId:v2.versionId,chunkCount:4});
 assert.equal((await store.documents('TCS')).filter(d=>d.active_version).length,1,'Alternate PDF formats of one fiscal annual report do not inflate coverage');
 assert.equal((await store.searchCorpus('TCS','cash'))[0].period,'FY2026');
+const withNeighbours=await store.searchCorpus('TCS','operating cash flow');assert.equal(withNeighbours.length,3);assert.ok(withNeighbours.some(p=>p.text.includes('All amounts in INR crore')),'Table units/continuation retain their own citation IDs');assert.equal((await store.readPassages('TCS',withNeighbours.map(p=>p.id))).length,3);
 assert.equal((await handleResearch(user('/documents/'+version.documentId+'/original?version='+version.versionId))).status,200,'Historical originals survive supersession');
 const changed=await store.askQuestion('alice','TCS','What is operating cash flow?');assert.notEqual(changed.id,cached.id);assert.notEqual(changed.cached,true);
 // Company onboarding remains available when the downloadable NSE directory is

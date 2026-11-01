@@ -60,6 +60,12 @@ Run `evaluate.py --output /var/lib/finn-research/evaluation.json` on the VM afte
 preparation; it calls the protected read-only evidence check and records source
 IDs, versions, pages, excerpts, latency and scope violations. A nonempty retrieval
 result is not proof that the question is answered; review semantic support too.
+The initial live 28-case run found no company/year/type scope violations and
+returned zero passages for both deliberately absent 2099 periods. It also
+confirmed stale v1 Infosys periods, so this is a diagnostic baseline, not final
+acceptance. Inspection of Reliance's cash-flow page showed that table headers
+and totals can fall in separate chunks; retrieval now includes bounded same-page
+header/continuation chunks with their own original citation IDs.
 
 Still required: verify corrected live coverage and useful evidence for all six;
 exercise real unseeded onboarding; inspect responsive UI and originals; verify
