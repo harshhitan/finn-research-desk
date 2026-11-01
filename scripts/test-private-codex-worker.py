@@ -45,6 +45,13 @@ class TransportTests(unittest.TestCase):
             process.assert_not_called()
         self.assertEqual(sent[0]['id'],99);self.assertEqual(sent[0]['error']['code'],-32601)
 
+    def test_failed_turn_reports_only_allowlisted_code(self):
+        for info,expected in [('usageLimitExceeded','usageLimitExceeded'),({'responseStreamDisconnected':{'httpStatusCode':503}},'responseStreamDisconnected'),('private-secret-token','other')]:
+            client,_,_=self.client([{'method':'turn/completed','params':{'turn':{'status':'failed','error':{'codexErrorInfo':info,'message':'private-secret-token','additionalDetails':'private body'}}}}])
+            with self.assertRaises(RuntimeError) as raised:client.analyse({'model':'fixture','instructions':'Use evidence','input':{}})
+            self.assertEqual(str(raised.exception),'Codex turn did not complete ('+expected+')')
+            self.assertNotIn('private',str(raised.exception))
+
 
 if __name__=='__main__':
     unittest.main()

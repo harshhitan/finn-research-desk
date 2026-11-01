@@ -50,9 +50,10 @@ export async function handleResearch(request:Request){
       const b:any=await request.json();if(typeof b.question!=="string"||b.question.trim().length<5||b.question.length>600)throw new Error("Enter a research question between 5 and 600 characters");
       const c=await resolveCompany(String(b.ticker||""));return json(await askQuestion(owner,c.ticker,b.question.trim(),filters(b.filters)),202);
     }
-    if(['facts','facts/compare'].includes(path)&&request.method==='POST'){
+    if(['facts','facts/compare','facts/margin'].includes(path)&&request.method==='POST'){
       const b:any=await request.json(),ticker=canonicalTicker(String(b.ticker||''));
-      if(!await company(ticker)||!Object.hasOwn(financialMetrics,b.metric)||!['consolidated','standalone'].includes(b.scope))throw new Error('Choose a research company, cash-flow metric and accounting scope');
+      if(!await company(ticker)||(path!=='facts/margin'&&!Object.hasOwn(financialMetrics,b.metric))||!['consolidated','standalone'].includes(b.scope))throw new Error('Choose a research company, supported financial metric and accounting scope');
+      if(path==='facts/margin')return json(await researchTools.calculate_margin.run(ticker,b.scope,String(b.basePeriod||''),String(b.currentPeriod||'')));
       return json(path==='facts'?await researchTools.get_financial_facts.run(ticker,b.metric as FinancialMetric,b.scope as FinancialScope):await researchTools.compare_facts.run(ticker,b.metric as FinancialMetric,b.scope as FinancialScope,String(b.basePeriod||''),String(b.currentPeriod||'')));
     }
     if(path==="history"&&request.method==="GET"){

@@ -175,6 +175,12 @@ class WorkerTests(unittest.TestCase):
                 result=instance.process_document({'id':'job','lease':'lease'},{'url':url,'title':'Call','type':'earnings_call'})
                 self.assertTrue(result['reused']);self.assertEqual(result['period'],'Q1 FY2027');extraction.assert_not_called()
                 self.assertEqual(actions[-1][0],'document/verified-period');self.assertEqual(actions[-1][1]['period'],'Q1 FY2027')
+            instance.cache.execute("UPDATE call_validation SET period='Period unverified'");instance.cache.commit()
+            content='Hindustan Unilever. June Quarter 2025 earnings call. Moderator: Results for the quarter-ended 30th June 2025. '+('Reported revenue and operating performance. '*50)
+            with patch.object(worker,'iter_pages',return_value=iter([(2,1,content),(2,2,'Moderator: Questions and answers. '+content)])) as extraction:
+                result=instance.process_document({'id':'job','lease':'lease','ticker':'HINDUNILVR','company':{'name':'Hindustan Unilever'}},{'url':url,'title':'Call','type':'earnings_call'})
+                self.assertTrue(result['reused']);self.assertEqual(result['period'],'Q1 FY2026');extraction.assert_called_once()
+                self.assertEqual(actions[-1][0],'document/verified-period')
             instance.cache.execute('UPDATE call_validation SET eligible=0,reason=?',('A recording notice',));instance.cache.commit()
             with patch.object(worker,'iter_pages') as extraction:
                 with self.assertRaises(worker.IneligibleDocument):
@@ -198,6 +204,7 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(worker.verified_period('earnings_call','Infosys Q4 2025-26 conference call'),'Q4 FY2026')
         self.assertEqual(worker.verified_period('earnings_call','RIL Q1 FY2026 - 2027 Media & Analyst Call Transcript'),'Q1 FY2027')
         self.assertEqual(worker.verified_period('earnings_call','Transcript of the Earnings Call for the quarter ended 30th June, 2026'),'Q1 FY2027')
+        self.assertEqual(worker.verified_period('earnings_call','June Quarter 2025 Earnings call. Conference Call for the Results of quarter-ended 30th June 2025.'),'Q1 FY2026')
         self.assertEqual(worker.verified_period('earnings_call','Transcript of the Earnings Call for the quarter and financial year ended 31st March, 2026'),'Q4 FY2026')
         self.assertEqual(worker.verified_period('earnings_call','Company quarterly-results/2026-2027/q2.html'),'Q2 FY2027')
         self.assertEqual(worker.document_period('https://issuer.test/infosys-ar-26.pdf','','Reports 2020'),'2026')

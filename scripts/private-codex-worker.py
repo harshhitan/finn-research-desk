@@ -106,8 +106,15 @@ class Codex:
                 elif item.get("type") not in ("reasoning", "userMessage"):
                     raise RuntimeError("Codex attempted a tool operation")
             if event.get("method") == "turn/completed":
-                if params.get("turn", {}).get("status") != "completed":
-                    raise RuntimeError("Codex turn did not complete")
+                completed=params.get('turn',{})
+                if completed.get('status') != 'completed':
+                    # Retain an allowlisted protocol code, never provider text,
+                    # request IDs, account details or response bodies.
+                    info=(completed.get('error') or {}).get('codexErrorInfo')
+                    allowed={'contextWindowExceeded','sessionBudgetExceeded','usageLimitExceeded','rateLimitExceeded','flexUnavailable','serverOverloaded','modelNotFound','policyCapacityUnavailable','internalServerError','unauthorized','badRequest','sandboxError','other','httpConnectionFailed','responseStreamConnectionFailed','responseStreamDisconnected','responseTooManyFailedAttempts'}
+                    code=info if isinstance(info,str) else next(iter(info),'other') if isinstance(info,dict) else 'other'
+                    code=code if code in allowed else 'other'
+                    raise RuntimeError('Codex turn did not complete ('+code+')')
                 raw = messages[-1] if messages else ""
                 if raw.startswith("```json\n") and raw.endswith("\n```"):
                     raw = raw[8:-4]

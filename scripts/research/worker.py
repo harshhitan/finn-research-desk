@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.8'
+VERSION = 'research-2.9'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-2'
 DISCOVERY_POLICY = 'primary-links-3'
@@ -260,7 +260,7 @@ def verified_period(kind, content):
             return 'Q'+match[1]+' FY20'+match[3]
         month_names='January|February|March|April|May|June|July|August|September|October|November|December'
         # Issuer filing cover letters identify the reported quarter explicitly.
-        ended = re.search(r'quarter(?:\s+and\s+(?:financial\s+year|half|six.month|year|nine.month)(?:\s+year|\s+period)?)?\s+ended\s+(?:\d{1,2}(?:st|nd|rd|th)?\s+)?('+month_names+r')\s*(?:\d{1,2}(?:st|nd|rd|th)?)?[,\s]+(20\d{2})',opening,re.I)
+        ended = re.search(r'quarter(?:\s+and\s+(?:financial\s+year|half|six.month|year|nine.month)(?:\s+year|\s+period)?)?[\s\-–]+ended\s+(?:\d{1,2}(?:st|nd|rd|th)?\s+)?('+month_names+r')\s*(?:\d{1,2}(?:st|nd|rd|th)?)?[,\s]+(20\d{2})',opening,re.I)
         if ended:
             month={name.lower():i+1 for i,name in enumerate(month_names.split('|'))}[ended[1].lower()]
             if month in (3,6,9,12):
@@ -647,7 +647,7 @@ class Worker:
                 validation=self.cache.execute('SELECT eligible,period,reason FROM call_validation WHERE hash=? AND policy=?',(digest,CALL_POLICY)).fetchone()
                 if validation and not validation[0]:
                     raise IneligibleDocument(validation[2],document,digest)
-                if validation and known.get('known'):
+                if validation and known.get('known') and validation[1]!='Period unverified':
                     return self.reuse_document(job,document,known,validation[1])
             if known.get('known') and document['type']!='earnings_call':
                 return self.reuse_document(job,document,known)
