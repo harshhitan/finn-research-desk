@@ -54,7 +54,7 @@ explicit retry and never repeats automatically.
 Research protocol tests cover authorization, leases/replay, original storage,
 atomic publication and metadata, annual alias retirement, historical PDFs,
 issuer/type/year filtering, retrieval ranking/diversity, model-off evidence,
-answer/citation validation, caching and directory fallback. Twenty-three Linux worker
+answer/citation validation, caching and directory fallback. Twenty-four Linux worker
 tests cover URL, memory, document, period, conversion, disabled-model guards and
 private failure diagnostics, staged indexing recovery and serial question
 checkpoints after conversion. Staged uploads resume only a contiguous ordinal
@@ -172,7 +172,7 @@ being met. Discovery policy `primary-links-3` removes the count-based early exit
 orders embedded fiscal years and compact filename dates without neighbouring
 table-year leakage, follows two observed financial-year archive values, and uses
 row context to distinguish presentations/notices from transcripts. The crawler
-remains limited to sixteen pages. Research-2.7 also serves saved questions between
+remains limited to sixteen pages. Research-2.8 also serves saved questions between
 discovery requests, never concurrently with conversion.
 
 Readiness checks two consecutive latest annual years (with publication time
@@ -188,6 +188,12 @@ it as an empty archive. It does not solve or bypass verification. Existing R2
 originals remain available and exchange-filed copies are an independent primary
 source. Table row context preserves the enclosing report section so generic
 year-labelled annual links remain identifiable.
+After a verification response, the crawler stops requesting more HTML pages on
+that host for the current attempt. Discovery failures have a one-hour cache;
+successful discovery retains its daily cache. A validated full annual format is
+preferred over another format for the same year, while newer years and explicit
+revisions still take priority. This avoids unnecessary reindexing when an issuer
+page becomes unavailable and the existing verified original is still cached.
 
 The 26-case review excluding NTPC returned no scope violations and empty results
 for all three absent-2099 cases. Manual review found a broad HUL-category

@@ -11,11 +11,32 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_validated_annual_format_is_reused_without_hiding_a_new_year(self):
+        with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'0'}):
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path));checked=[]
+            old='https://issuer.test/annual-report-2026.pdf';new='https://issuer.test/annual-report-2027.pdf';alternate='https://issuer.test/alternate-annual-report-2026.pdf'
+            candidates=[{'url':u,'title':'Annual report','type':'annual_report','period':p} for u,p in [(alternate,'FY2026'),(new,'FY2027')]]
+            instance.directory_lookup=lambda:False;instance.progress=lambda *args:None;instance.api=lambda *args:{}
+            def process(job,document,seen):
+                checked.append(document['url']);return {'url':document['url'],'period':document['period']}
+            instance.process_document=process
+            job={'id':'job','lease':'lease','company':{'ticker':'TEST','sources':[]},'documents':[{'source_url':old,'title':'Annual report','type':'annual_report','period':'FY2026','active_version':'version','status':'ready'}]}
+            with patch.object(worker,'discover',return_value=(candidates,[])):instance.prepare(job)
+            self.assertEqual(checked,[new,old]);instance.cache.close()
+
     def test_browser_verification_page_is_not_silent_empty_discovery(self):
         class Response(io.BytesIO):url='https://issuer.test/ir'
         with patch.object(worker,'source_open',return_value=Response(b'<html><title>Radware Captcha Page</title></html>')):
             with self.assertRaisesRegex(worker.ResearchError,'browser verification'):
                 worker.html_links('https://issuer.test/ir')
+        fetched=[]
+        def pages(url):
+            fetched.append(url)
+            if url=='https://issuer.test/ir':raise worker.ResearchError('Primary source requires browser verification')
+            return []
+        with patch.object(worker,'html_links',side_effect=pages):
+            _,diagnostics=worker.discover({'ticker':'TEST','sources':['https://issuer.test/ir','https://issuer.test/archive']})
+        self.assertNotIn('https://issuer.test/archive',fetched);self.assertEqual(len(diagnostics),1)
 
     def test_table_rows_distinguish_synopses_notices_and_transcripts(self):
         parser=worker.Links('https://issuer.test/investors/conference-call')

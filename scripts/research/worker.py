@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.7'
+VERSION = 'research-2.8'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-2'
 DISCOVERY_POLICY = 'primary-links-3'
@@ -313,7 +313,7 @@ def discover(company, progress=lambda *_: None):
     ticker = company['ticker']
     roots = list(company.get('sources') or [])
     roots.append('https://www.screener.in/company/' + urllib.parse.quote(ticker, safe='') + '/consolidated/')
-    documents, visited, diagnostics, queue = {}, set(), [], [(url, 0) for url in roots]
+    documents, visited, diagnostics, queue, blocked_hosts = {}, set(), [], [(url, 0) for url in roots],set()
     issuer_hosts = {urllib.parse.urlsplit(url).hostname for url in roots if 'screener.in' not in url}
     while queue and len(visited) < 16:
         def priority(item):
@@ -323,7 +323,7 @@ def discover(company, progress=lambda *_: None):
         queue.sort(key=priority)
         url, depth = queue.pop(0)
         url = urllib.parse.urldefrag(url)[0]
-        if url in visited:
+        if url in visited or urllib.parse.urlsplit(url).hostname in blocked_hosts:
             continue
         visited.add(url)
         progress('Discovering primary documents', {'pagesChecked': len(visited), 'candidates': len(documents)})
@@ -331,6 +331,7 @@ def discover(company, progress=lambda *_: None):
             links = html_links(url)
         except ResearchError as error:
             diagnostics.append({'url': url, 'reason': str(error)})
+            if 'browser verification' in str(error):blocked_hosts.add(urllib.parse.urlsplit(url).hostname)
             continue
         for href, label, surrounding in links:
             parsed = urllib.parse.urlsplit(href)
@@ -718,12 +719,26 @@ class Worker:
 
     def prepare(self, job):
         discovery_path = self.state / ('discovery-' + discovery_cache_key(job['company']) + '.json')
-        if discovery_path.exists() and time.time()-discovery_path.stat().st_mtime<86400:
-            discovery = json.loads(discovery_path.read_text())
+        discovery=json.loads(discovery_path.read_text()) if discovery_path.exists() else None
+        if discovery is not None and time.time()-discovery_path.stat().st_mtime<(3600 if discovery.get('diagnostics') else 86400):
             candidates, diagnostics = discovery['documents'], discovery['diagnostics']
         else:
             candidates, diagnostics = discover(job['company'], lambda s,p: self.question_checkpoint(job,s,p))
             discovery_path.write_text(json.dumps({'documents':candidates,'diagnostics':diagnostics}))
+        # Prefer an already validated full annual format for the same year.
+        # Newer years and explicitly revised editions still outrank the cache.
+        annuals={d['source_url']:d for d in job.get('documents',[]) if d.get('active_version') and d['type']=='annual_report' and d.get('status')=='ready'}
+        candidates=list(candidates)
+        urls={d['url'] for d in candidates}
+        candidates.extend({'url':url,'title':d['title'],'type':'annual_report','period':d['period']} for url,d in annuals.items() if url not in urls)
+        reports=[]
+        for document in candidates:
+            if document['type']=='annual_report':
+                reports.append({**document,'period':annuals[document['url']]['period']} if document['url'] in annuals else document)
+        def annual_priority(document):
+            score=discovery_score(document);revised=bool(re.search(r'revised|corrected|restated|replacement',document['url']+' '+document['title'],re.I))
+            return (score[0],revised,document['url'] in annuals,*score[1:])
+        candidates=sorted(reports,key=annual_priority,reverse=True)+[d for d in candidates if d['type']!='annual_report']
         active_calls={d['source_url']:d for d in job.get('documents',[]) if d.get('active_version') and d['type']=='earnings_call'}
         candidate_urls={d['url'] for d in candidates}
         candidates=list(candidates)+[{'url':url,'title':d['title'],'type':'earnings_call','period':d['period']} for url,d in active_calls.items() if url not in candidate_urls]
