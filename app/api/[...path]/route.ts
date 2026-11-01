@@ -87,7 +87,7 @@ async function handle(request:Request) {
       const start=from?Date.parse(from):Date.now()-86400000;const end=to?Date.parse(to):Date.now();if(start>end)return json({error:"Start must precede end"},400);
       const filings=await getAnnouncements();const items=[...issuerFeed(filings.records),...buildFeed(corpus)].filter(e=>Date.parse(e.publishedAt)>=start&&Date.parse(e.publishedAt)<=end);return json({items,coverage:filings.coverage||"Indexed historical primary documents; not a complete live exchange feed",from:new Date(start).toISOString(),to:new Date(end).toISOString()});
     }
-    if(path==="research" && request.method==="POST"){
+    if((path==="research"||path==="legacy-research") && request.method==="POST"){
       const input:any=await request.json();if(typeof input.question!=="string"||input.question.trim().length<3||input.question.length>600)return json({error:"Enter a question between 3 and 600 characters."},400);
       if(input.ticker&&input.ticker!=="RELIANCE")return json({error:"This workspace currently indexes RELIANCE only.",code:"company_not_indexed"},422);
       const recent=await database().prepare("SELECT COUNT(*) AS count FROM research_runs WHERE owner=? AND created_at>?").bind(who.owner,new Date(Date.now()-60000).toISOString()).first<{count:number}>();
@@ -95,7 +95,7 @@ async function handle(request:Request) {
       const answer=answerQuestion(corpus,input.question.trim(),input.topic);
       await database().prepare("INSERT INTO research_runs(id,owner,question,result,created_at) VALUES(?,?,?,?,?)").bind(answer.id,who.owner,answer.question,JSON.stringify(answer),answer.createdAt).run();return json(answer);
     }
-    if(path==="research/history"){
+    if(path==="research/history"||path==="legacy-research/history"){
       const rows=await database().prepare("SELECT result FROM research_runs WHERE owner=? ORDER BY created_at DESC LIMIT 20").bind(who.owner).all<{result:string}>();return json(rows.results.map(r=>JSON.parse(r.result)));
     }
     if(path==="saved"&&request.method==="GET")return json(await saved(who.owner));

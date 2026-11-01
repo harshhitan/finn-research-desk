@@ -1,0 +1,42 @@
+[Unit]
+Description=FINN document ingestion and on-demand research
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=1800
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=azureuser
+Group=azureuser
+ExecStart=/usr/bin/python3 -B /home/azureuser/finn-personal/research/worker.py
+StateDirectory=finn-research
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/finn-research
+Environment=PYTHONUNBUFFERED=1
+Environment=FINN_RESEARCH_MODEL_ENABLED=0
+Environment=OMP_THREAD_LIMIT=1
+Environment=OMP_NUM_THREADS=1
+Restart=on-failure
+RestartSec=60
+TimeoutStopSec=20
+KillMode=control-group
+UMask=0077
+MemoryHigh=192M
+MemoryMax=256M
+MemorySwapMax=128M
+CPUQuota=100%
+Nice=10
+TasksMax=32
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/finn-research
+# Model use is disabled. A separate explicit configuration change is required
+# before allowing model requests and write access to the Codex credential store.
+InaccessiblePaths=/home/azureuser/.codex
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

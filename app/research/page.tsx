@@ -1,2 +1,2 @@
-import ResearchDesk from "../research-desk";
-export default function Research(){return <ResearchDesk/>;}
+import ResearchHub from "../research-hub";
+export default function Research(){return <ResearchHub/>;}
