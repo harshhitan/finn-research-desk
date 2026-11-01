@@ -30,7 +30,7 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.5'
+VERSION = 'research-2.6'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-2'
 DISCOVERY_POLICY = 'primary-links-2'

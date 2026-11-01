@@ -60,6 +60,8 @@ const consolidatedTotal={...relevant,id:'consolidated-total',heading:'Consolidat
 const tableHeading={...relevant,id:'table-heading',text:'Consolidated cash flow statement for the year ended 31 March 2026. Reporting period and units in crore. Cash Flow from Operating Activities.'};
 const standaloneTotal={...consolidatedTotal,id:'standalone-total',page:11,heading:'Standalone Financial Statements',text:'Net Cash Flow from Operating Activities 79,059 79,392. Reporting period and units in the FY2026 cash flow statement.'};
 assert.equal(store.rankPassages([tableHeading,standaloneTotal,consolidatedTotal],totalQuestion)[0].id,'consolidated-total','Return the actual consolidated total row before a matching table heading or standalone figure');
+const quarterRows=[...Array.from({length:8},(_,i)=>({...relevant,id:'q4-'+i,document_id:'q4',page:i+1,period:'Q4 FY2026',text:'Full year revenue growth and operating margin guidance for FY2026 earnings calls. Quarter detail '+i})),...[1,2,3].map(q=>({...relevant,id:'quarter-'+q,document_id:'q'+q,page:1,period:'Q'+q+' FY2026',text:'Quarter '+q+' revenue guidance and operating margin range.'}))];
+assert.equal(new Set(store.rankPassages(quarterRows,'Revenue growth and operating margin guidance in FY2026 earnings calls, preserving each quarter.',6).map(p=>p.period)).size,4,'An explicit multi-quarter request cannot spend all context on the highest-ranking quarter');
 assert.equal(store.annualPeriod('Q2 2026'),'FY2026');assert.equal(store.annualPeriod('2025-26'),'FY2026');
 assert.equal((await store.searchCorpus('RELIANCE','cash conversion')).length,0,'Issuer isolation');
 assert.equal((await store.searchCorpus('TCS','cash',{period:'2025'})).length,0,'Period filtering');
@@ -81,6 +83,8 @@ assert.equal((await handleResearch(user('/questions/'+question.id,'GET',null,'bo
 const same=await store.askQuestion('alice','TCS','What is operating cash flow?');assert.equal(same.id,question.id);
 await call('heartbeat',{modelReady:true,modelEnabled:true,memoryAvailableMb:300,workerVersion:'test'});
 const claimed=(await call('question/claim')).question;assert.equal(claimed.id,question.id);
+assert.equal(claimed.outputSchema.properties.findings.items.properties.citations.maxItems,4,'Generation receives the validator citation budget');
+assert.equal(claimed.outputSchema.properties.findings.items.properties.citations.items.properties.quote.minLength,20,'Generation receives the minimum exact-quote length');
 const summary='Operating cash flow was 100 crore in 2026.';
 const answer={summary,findings:[{text:summary,citations:[{chunkId:passages[0].id,quote:'operating cash flow of 100 crore in 2026'}]}],missingEvidence:[]};
 assert.equal((await handleResearch(service('question/complete',{id:question.id,lease:'bad',answer}))).status,400);

@@ -146,6 +146,23 @@ are retained. Policy `quarterly-dialogue-2` versions this eligibility/period che
 Research history restores the saved year/source filters, and multiple quotes
 from one passage produce one source button per finding.
 
+The live Infosys guidance answer preserved Q2/Q3 FY2026 ranges and distinguished
+the FY2027 outlook issued in the Q4 FY2026 call. It also exposed missing Q1
+retrieval despite that transcript being indexed. Explicit multi-period requests
+now gather bounded per-document candidates and select distinct periods before
+filling remaining context (`fts-neighbours-5`). Missing search results have an
+explicit company/filter-scoped empty state.
+
+A live TCS answer was withheld because it exceeded four citations per finding
+and included quotes shorter than twenty characters. The original prompt did not
+state both limits. Prompt `research-3` now states every output budget and the
+question job supplies a bounded JSON output schema. The installed CLI protocol
+supports turn-scoped `outputSchema`; the shared transport forwards it only for
+jobs supplying that contract. Server quote, number and provenance checks remain
+mandatory. Three transport tests verify schema forwarding, unchanged legacy
+filing behavior and denial of document-induced tool/approval requests. All three
+and sixteen worker tests pass on Linux. A real TCS retry is still required.
+
 ## Operations and recovery
 
 On the VM, inspect `systemctl status finn-research.service` and

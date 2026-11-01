@@ -85,11 +85,14 @@ class Codex:
             "approvalPolicy": "untrusted", "cwd": str(Path.cwd()),
             "baseInstructions": job["instructions"],
         })
-        self.request("turn/start", {
+        turn = {
             "threadId": thread["thread"]["id"],
             "input": [{"type": "text", "text": json.dumps(job["input"])}],
             "permissions": "finn",
-        })
+        }
+        if job.get('outputSchema') is not None:
+            turn['outputSchema'] = job['outputSchema']
+        self.request("turn/start", turn)
         messages = []
         deadline = time.monotonic() + 180
         while time.monotonic() < deadline:
