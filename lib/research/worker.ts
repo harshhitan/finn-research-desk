@@ -107,7 +107,7 @@ export async function researchWorkerAction(action:string,body:any){
     if(!q)throw new Error('Research question lease is missing or expired');
     return runWorkflowTools(q,body.plan);
   }
-  if(action==="question/complete"||action==="question/failed"){
+  if(action==="question/complete"||action==="question/failed"||action==='question/review'){
     const q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND owner=? AND status='running' AND lease=? AND lease_until>?").bind(String(body.id||""),owner,String(body.lease||""),now).first<any>();
     if(!q)throw new Error("Research question lease is missing or expired");
     if(action.endsWith("failed")){
@@ -117,6 +117,18 @@ export async function researchWorkerAction(action:string,body:any){
     if(await sourceVersion(q.ticker)!==q.source_version)throw new Error("Research evidence changed during analysis; retry against the new document versions");
     if(await questionCacheKey(q.ticker,q.question,parse(q.filters,{}),q.source_version)!==q.cache_key)throw new Error('Research model or prompt configuration changed during analysis; retry explicitly.');
     const flow=await readWorkflow(q.id);
+    if(action==='question/review'){
+      if(flow){flow.stage='Verifying answer and citations';await saveWorkflow(q.id,flow);}
+      try{validateResearchAnswer(body.answer,parse<ResearchPassage[]>(q.context,[]),String(environment().FINN_PRIVATE_CODEX_MODEL||'Codex'),flow?.calculations||[]);return {valid:true};}
+      catch(error){
+        const issues:string[]=[];
+        if(Array.isArray(body.answer?.findings))for(const [index,finding] of body.answer.findings.slice(0,8).entries()){
+          try{validateResearchAnswer({...body.answer,summary:finding.text,findings:[finding]},parse<ResearchPassage[]>(q.context,[]),String(environment().FINN_PRIVATE_CODEX_MODEL||'Codex'),flow?.calculations||[]);}
+          catch(issue){issues.push('Finding '+(index+1)+': '+(issue as Error).message);}
+        }
+        return {valid:false,issue:(issues.length?issues.join('\n'):(error as Error).message).slice(0,5000)};
+      }
+    }
     const answer=validateResearchAnswer(body.answer,parse<ResearchPassage[]>(q.context,[]),String(environment().FINN_PRIVATE_CODEX_MODEL||"Codex"),flow?.calculations||[]),usage=normalizeResearchUsage(body.usage);
     if(usage)answer.usage=usage;
     if(flow){flow.stage='Answer and citations verified';await saveWorkflow(q.id,flow);}

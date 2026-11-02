@@ -77,8 +77,8 @@ Derived claims must reference a saved calculation and cite the original input
 amounts. The answer displays formulas/inputs/sources; the standalone calculator
 panel has been removed. Workflow progress lives in `provider_cache` under
 `research-workflow:<question-id>` and old answers remain readable. Prompt/tool
-changes invalidate answer cache keys. A run may make up to three serial model
-turns, so its latency/usage can exceed the earlier single-pass answer.
+changes invalidate answer cache keys. A run may make up to four serial model
+turns (including one optional repair after citation/numerical validation), so its latency/usage can exceed the earlier single-pass answer.
 
 Run the Linux worker tests and shared transport tests before installation. Verify
 staged hashes. Avoid restarting during an active model turn; a stopped inference

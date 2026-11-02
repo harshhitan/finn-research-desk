@@ -11,6 +11,24 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_final_review_repairs_once_without_publishing_rejected_draft(self):
+        with tempfile.TemporaryDirectory() as path:
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))
+            question={'id':'q','lease':'l','model':'test','instructions':'Use evidence','input':{'passages':[]}}
+            calls=[];usage=[]
+            instance.api=lambda action,body:calls.append(action) or {'valid':False,'issue':'Unsupported number'}
+            class Client:
+                last_usage=None
+                def analyse(self,request):
+                    self.request=request;return {'summary':'Repaired with evidence'}
+            client=Client();draft={'summary':'Unsupported draft'}
+            self.assertEqual(instance.review_answer(client,question,draft,usage)['summary'],'Repaired with evidence')
+            self.assertEqual(calls,['question/review']);self.assertEqual(client.request['input']['rejectedDraft'],draft)
+            self.assertEqual(client.request['input']['validationIssue'],'Unsupported number');self.assertEqual(len(usage),1)
+            instance.api=lambda *args:{'valid':True}
+            self.assertEqual(instance.review_answer(client,question,draft,usage),draft);self.assertEqual(len(usage),1)
+            instance.cache.close()
+
     def test_research_plan_tools_review_and_final_context_are_bounded(self):
         with tempfile.TemporaryDirectory() as path:
             instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))

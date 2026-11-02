@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.12'
+VERSION = 'research-2.13'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-2'
 DISCOVERY_POLICY = 'primary-links-3'
@@ -797,6 +797,8 @@ class Worker:
                 usage = []
             value = client.analyse(question)
             usage.append(getattr(client,'last_usage',None))
+            if question.get('planner') and question.get('kind') != 'filing':
+                value=self.review_answer(client,question,value,usage)
             stage='validation'
             if question.get('kind') == 'filing':
                 self.filing_api('complete', {'id':question['id'],'lease':question['lease'],'analysis':value})
@@ -809,6 +811,16 @@ class Worker:
             if client:
                 client.close()
             os.chdir(previous)
+
+    def review_answer(self,client,question,value,usage):
+        review=self.api('question/review',{'id':question['id'],'lease':question['lease'],'answer':value})
+        if review.get('valid') is True:
+            return value
+        repair={**question,'input':{**question['input'],'rejectedDraft':value,'validationIssue':review.get('issue','Evidence validation failed')}}
+        repair['instructions']+=' Repair the draft using the validation issue and supplied evidence. Keep only supported claims. Correct quotes or omit unsupported details; never invent support. All numbers in each finding must be in that finding\'s quotes or referenced verified calculations. Remove manually written source/page columns; the interface adds source buttons. Preserve exact source numbers and canonical reporting periods. You have one repair attempt.'
+        value=client.analyse(repair)
+        usage.append(getattr(client,'last_usage',None))
+        return value
 
     @staticmethod
     def total_usage(records):
