@@ -7,9 +7,9 @@ export async function privateWorkerAction(action:string,body:any){
   const db=database(),now=new Date().toISOString();
   await db.prepare("INSERT INTO portfolio_private_worker(owner,last_seen) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET last_seen=excluded.last_seen").bind(config.owner,now).run();
   if(action==="claim"){
-    await db.prepare("UPDATE portfolio_private_jobs SET status=CASE WHEN attempts>=3 THEN 'failed' ELSE 'retry' END,available_at=?,lease=NULL,lease_until=NULL,error='Personal worker lease expired' WHERE owner=? AND status='running' AND lease_until<?").bind(now,config.owner,now).run();
+    await db.prepare("UPDATE portfolio_private_jobs SET status='failed',available_at=?,lease=NULL,lease_until=NULL,error='Analysis interrupted; request a retry' WHERE owner=? AND status='running' AND lease_until<?").bind(now,config.owner,now).run();
     const lease=crypto.randomUUID(),until=new Date(Date.now()+600000).toISOString();
-    const job=await db.prepare("UPDATE portfolio_private_jobs SET status='running',attempts=attempts+1,lease=?,lease_until=?,error=NULL WHERE id=(SELECT id FROM portfolio_private_jobs WHERE owner=? AND model=? AND status IN ('queued','retry') AND available_at<=? AND NOT EXISTS(SELECT 1 FROM portfolio_private_jobs WHERE owner=? AND status='running') ORDER BY created_at LIMIT 1) RETURNING *").bind(lease,until,config.owner,config.model,now,config.owner).first<Job>();
+    const job=await db.prepare("UPDATE portfolio_private_jobs SET status='running',attempts=attempts+1,lease=?,lease_until=?,error=NULL WHERE id=(SELECT j.id FROM portfolio_private_jobs j WHERE owner=? AND model=? AND status IN ('queued','retry') AND available_at<=? AND EXISTS(SELECT 1 FROM provider_cache p WHERE p.key='portfolio-request:'||j.id) AND NOT EXISTS(SELECT 1 FROM portfolio_private_jobs WHERE owner=? AND status='running') ORDER BY created_at LIMIT 1) RETURNING *").bind(lease,until,config.owner,config.model,now,config.owner).first<Job>();
     if(!job)return {job:null};
     try{
       const content=await portfolioDocument(job.filing_id);if(content.contentHash!==job.content_hash)throw new Error("This document changed; request a fresh analysis");
@@ -30,4 +30,4 @@ export async function privateWorkerAction(action:string,body:any){
     return {accepted:true,filingId:job.filing_id,claims:analysis.claims.length,metrics:analysis.metrics.length};
   }catch(error){await failJob(job);throw error;}
 }
-async function failJob(job:Job){await database().prepare("UPDATE portfolio_private_jobs SET status=?,available_at=?,lease=NULL,lease_until=NULL,error='Personal analysis failed or its evidence did not validate' WHERE id=? AND lease=? AND status='running'").bind(job.attempts>=3?"failed":"retry",new Date(Date.now()+job.attempts*60000).toISOString(),job.id,job.lease).run();}
+async function failJob(job:Job){await database().prepare("UPDATE portfolio_private_jobs SET status='failed',lease=NULL,lease_until=NULL,error='Analysis failed or its evidence did not validate' WHERE id=? AND lease=? AND status='running'").bind(job.id,job.lease).run();}

@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.10'
+VERSION = 'research-2.11'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-2'
 DISCOVERY_POLICY = 'primary-links-3'
@@ -503,10 +503,16 @@ class Worker:
         (self.state / 'cache').mkdir(exist_ok=True)
 
     def api(self, path, body):
+        return self._api('/api/research/worker/' + path, body)
+
+    def filing_api(self, path, body):
+        return self._api('/api/portfolio/private-worker/' + path, body)
+
+    def _api(self, path, body):
         raw = json.dumps(body).encode()
         if len(raw) > 250000:
             raise ResearchError('Research upload batch exceeds the size limit')
-        req = urllib.request.Request(SITE + '/api/research/worker/' + path, data=raw,
+        req = urllib.request.Request(SITE + path, data=raw,
             headers={'Content-Type': 'application/json', 'OAI-Sites-Authorization': 'Bearer ' + self.config['serviceToken'], 'X-Finn-Job-Token': self.config['serviceToken']})
         try:
             with self.opener.open(req, timeout=60) as response:
@@ -787,7 +793,10 @@ class Worker:
             client = module.Codex('/home/azureuser/.local/bin/codex', str(work))
             value = client.analyse(question)
             stage='validation'
-            self.api('question/complete', {'id': question['id'], 'lease': question['lease'], 'answer': value, 'usage':getattr(client,'last_usage',None)})
+            if question.get('kind') == 'filing':
+                self.filing_api('complete', {'id':question['id'],'lease':question['lease'],'analysis':value})
+            else:
+                self.api('question/complete', {'id': question['id'], 'lease': question['lease'], 'answer': value, 'usage':getattr(client,'last_usage',None)})
         except Exception as error:
             self.record_model_failure(question,stage,error,value)
             raise
@@ -840,12 +849,18 @@ class Worker:
                 return False
             question=self.api('question/claim',{}).get('question')
             if not question:
-                return False
+                question=self.filing_api('claim',{}).get('job')
+                if not question:
+                    return False
+                question={**question,'kind':'filing'}
             self.answer(question)
         except Exception:
             if question:
                 with contextlib.suppress(Exception):
-                    self.api('question/failed',{'id':question['id'],'lease':question['lease']})
+                    if question.get('kind') == 'filing':
+                        self.filing_api('failed',{'id':question['id'],'lease':question['lease']})
+                    else:
+                        self.api('question/failed',{'id':question['id'],'lease':question['lease']})
             print(json.dumps({'status':'model_request_deferred_or_failed','evidenceRetained':True}),flush=True)
         return question is not None
 

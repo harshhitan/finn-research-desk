@@ -31,7 +31,7 @@ export async function handlePortfolio(request:Request){
       const now=new Date(),from=url.searchParams.get("from")||new Date(now.getTime()-86400000).toISOString(),to=url.searchParams.get("to")||now.toISOString(),ticker=url.searchParams.get("ticker")||undefined;
       if(!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to))||Date.parse(from)>Date.parse(to)||Date.parse(to)-Date.parse(from)>366*86400000)return json({error:"Choose a valid window of up to one year."},400);
       const snapshot=await portfolioSnapshot(who.owner,new Date(from).toISOString(),new Date(to).toISOString(),ticker);
-      const privateJobs=privateCodexConfig()?.owner===who.owner?(await database().prepare("SELECT filing_id,status,error,created_at FROM portfolio_private_jobs WHERE owner=? ORDER BY created_at DESC LIMIT 100").bind(who.owner).all()).results:[];
+      const privateJobs=privateCodexConfig()?.owner===who.owner?(await database().prepare("SELECT filing_id,status,error,created_at,EXISTS(SELECT 1 FROM provider_cache p WHERE p.key='portfolio-request:'||j.id) AS requested FROM portfolio_private_jobs j WHERE owner=? ORDER BY created_at DESC LIMIT 100").bind(who.owner).all()).results:[];
       return json({...snapshot,privateJobs,subscription:await subscriptionStatus(who.owner)});
     }
     if(path==="rules"&&request.method==="PUT"){const body=await request.text();if(body.length>16000)return json({error:"Request is too large"},413);try{return json(await saveMonitoringRules(who.owner,JSON.parse(body)));}catch{return json({error:"Use price thresholds of 0.1–50%, volume of 1–20× and known portfolio companies/categories."},400);}}
@@ -50,7 +50,7 @@ export async function handlePortfolio(request:Request){
     const document=path.match(/^filings\/([a-zA-Z0-9-]+)\/content$/);
     if(document&&request.method==="GET")return json(await portfolioDocument(document[1]));
     const analysis=path.match(/^filings\/([a-zA-Z0-9-]+)\/analyse$/);
-    if(analysis&&request.method==="POST")return json(await analyseFiling(who.owner,analysis[1]));
+    if(analysis&&request.method==="POST")return json(await analyseFiling(who.owner,analysis[1],true));
     const results=path.match(/^filings\/([a-zA-Z0-9-]+)\/results$/);
     if(results&&request.method==="GET")return json(await resultsForFiling(who.owner,results[1]));
     if(path==="alerts/read"&&request.method==="POST"){await database().prepare("UPDATE portfolio_alerts SET read_at=? WHERE owner=? AND read_at IS NULL").bind(new Date().toISOString(),who.owner).run();return json({read:true});}

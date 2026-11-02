@@ -159,6 +159,26 @@ class WorkerTests(unittest.TestCase):
             self.assertTrue(instance.answer_waiting_question());self.assertEqual(calls,['question/claim','question/failed'])
             self.assertNotIn('private provider body',log.getvalue());instance.cache.close()
 
+    def test_requested_filing_uses_shared_serial_worker_and_failure_endpoint(self):
+        with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'1'}),patch.object(worker,'available_memory',return_value=300),patch('sys.stdout',new_callable=io.StringIO):
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))
+            calls=[]
+            instance.api=lambda action,body:calls.append(('research',action)) or {'question':None}
+            instance.filing_api=lambda action,body:calls.append(('filing',action)) or {'job':{'id':'f','lease':'l'}}
+            instance.model_ready=lambda:True
+            def answer(job):
+                self.assertEqual(job['kind'],'filing')
+                raise RuntimeError('test failure')
+            instance.answer=answer
+            self.assertTrue(instance.answer_waiting_question())
+            self.assertEqual(calls,[('research','question/claim'),('filing','claim'),('filing','failed')])
+            calls.clear();instance.model_enabled=False
+            self.assertFalse(instance.answer_waiting_question());self.assertEqual(calls,[])
+            instance.model_enabled=True
+            with patch.object(worker,'available_memory',return_value=200):
+                self.assertFalse(instance.answer_waiting_question());self.assertEqual(calls,[])
+            instance.cache.close()
+
     def test_known_call_reuses_eligibility_only_for_the_same_hash_and_policy(self):
         with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'0'}):
             instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))

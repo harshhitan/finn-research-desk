@@ -31,7 +31,12 @@ Site, local computer, repository or another account. The current owner explicitl
 authorized this profile and completed sign-in.
 
 Model availability checks do not request inference. Inference claims only saved
-owner questions and is serial. The optional profile permits official credential
+owner questions and explicitly requested portfolio filing analyses and is serial.
+Filing requests are marked in `provider_cache` under `portfolio-request:<job-id>`;
+legacy unmarked queue entries stay paused. Collection cannot create new AI requests.
+The same research worker claims both queues; the old portfolio model service must
+remain disabled. Filing validation failures or interrupted leases stop at `failed`
+and require an explicit retry. The optional profile permits official credential
 refresh; it does not enable scheduled model monitoring. Turning it off preserves
 stored answers and indexed evidence; unanswered requests wait for availability.
 The old `finn-personal-worker.service` remains disabled. The collection-only
