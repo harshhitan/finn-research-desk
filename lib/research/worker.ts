@@ -1,6 +1,6 @@
 import {env} from "cloudflare:workers";
 import {database} from "../repository";
-import {annualPeriod,company,coverage,documents,enqueuePreparation,hash,parse,questionCacheKey,refreshQuestion,researchInstructions,researchAnswerSchema,seedResearch,stamp,synchronizeCompany,validateResearchAnswer,normalizeResearchUsage,sourceVersion} from "./store";
+import {annualPeriod,company,coverage,documents,enqueuePreparation,hash,parse,questionCacheKey,refreshQuestion,researchInstructions,researchAnswerSchema,seedResearch,stamp,synchronizeCompany,validateResearchAnswer,recoverVerifiedAnswer,normalizeResearchUsage,sourceVersion} from "./store";
 import {seedResearchCompanies,type ResearchPassage} from "./types";
 import {researchTools} from "./tools";
 import {emptyWorkflow,saveWorkflow,readWorkflow,runWorkflowTools,planInstructions,planSchema} from './workflow';
@@ -129,7 +129,7 @@ export async function researchWorkerAction(action:string,body:any){
         return {valid:false,issue:(issues.length?issues.join('\n'):(error as Error).message).slice(0,5000)};
       }
     }
-    const answer=validateResearchAnswer(body.answer,parse<ResearchPassage[]>(q.context,[]),String(environment().FINN_PRIVATE_CODEX_MODEL||"Codex"),flow?.calculations||[]),usage=normalizeResearchUsage(body.usage);
+    const answer=(flow&&flow.rounds>0?recoverVerifiedAnswer:validateResearchAnswer)(body.answer,parse<ResearchPassage[]>(q.context,[]),String(environment().FINN_PRIVATE_CODEX_MODEL||"Codex"),flow?.calculations||[]),usage=normalizeResearchUsage(body.usage);
     if(usage)answer.usage=usage;
     if(flow){flow.stage='Answer and citations verified';await saveWorkflow(q.id,flow);}
     await db.prepare("UPDATE research_questions SET status='done',answer=?,error=NULL,lease=NULL,lease_until=NULL,updated_at=? WHERE id=? AND lease=? AND status='running'").bind(JSON.stringify(answer),now,q.id,q.lease).run();return {accepted:true};
