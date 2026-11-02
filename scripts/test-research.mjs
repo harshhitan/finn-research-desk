@@ -7,7 +7,7 @@ globalThis.Date=class extends ActualDate{constructor(...args){if(args.length)sup
 const root=new URL('../',import.meta.url),out=new URL('../.sites-runtime/research-tests/',import.meta.url);
 await fs.mkdir(out,{recursive:true});
 await fs.writeFile(new URL('env.mjs',out),'export const env=globalThis.__researchEnv;');
-const modules=['repository','finance','research/types','research/store','research/facts','research/tools','research/worker','research/api'];
+const modules=['repository','finance','research/types','research/store','research/facts','research/tools','research/workflow','research/worker','research/api'];
 const moduleUrl=n=>new URL(n.replaceAll('/','-')+'.mjs',out);
 for(const n of modules){
   const file=new URL(`lib/${n}.ts`,root);let js=ts.transpileModule(await fs.readFile(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
@@ -267,6 +267,29 @@ for(let i=0;i<40;i++)sqlite.prepare('INSERT INTO research_chunks(id,version_id,d
 sqlite.prepare('UPDATE research_chunks SET heading=?,text=? WHERE version_id=?').run(incomePage.heading,incomePage.text,factDocument.active_version);
 const liveIncome=await financials.getFinancialFacts('HINDUNILVR','revenue_from_operations','consolidated');assert.equal(liveIncome.facts[0].value,'200000','Statement headers retain a budget independent of call mentions');
 const liveMargin=await (await handleResearch(user('/facts/margin','POST',{ticker:'HINDUNILVR',scope:'consolidated',basePeriod:'FY2025',currentPeriod:'FY2026'}))).json();assert.equal(liveMargin.marginComparison.current.value,'20');assert.equal(liveMargin.marginComparison.changePercentagePoints,'3.3334');
+// Ask FINN runs a bounded backend tool workflow; derived values must reference
+// actual server calculations and cite their original numeric input passages.
+sqlite.prepare("UPDATE research_questions SET status='done' WHERE status IN ('queued','waiting_model','waiting_documents')").run();
+const workflow=await import(moduleUrl('research/workflow'));
+const agentQuestion=await store.askQuestion('alice','HINDUNILVR','What are the business revenue growth metrics?');
+const agentClaim=(await call('question/claim')).question;assert.equal(agentClaim.id,agentQuestion.id);assert.ok(agentClaim.planner.outputSchema);
+const toolCall={tool:'compare_facts',query:'YoY',metric:'revenue_from_operations',scope:'consolidated',basePeriod:'FY2025',currentPeriod:'FY2026',ids:[]};
+assert.equal((await handleResearch(service('question/tools',{id:agentClaim.id,lease:'bad',plan:{objective:'Growth',calls:[toolCall]}}))).status,400);
+assert.equal((await handleResearch(service('question/tools',{id:agentClaim.id,lease:agentClaim.lease,plan:{objective:'Growth',calls:[{...toolCall,tool:'run_python'}]}}))).status,400,'The agent cannot run arbitrary code');
+const toolOutput=await call('question/tools',{id:agentClaim.id,lease:agentClaim.lease,plan:{objective:'Compare reported revenue and margins',calls:[toolCall,{...toolCall,tool:'calculate_margin',metric:''}]}});
+assert.equal(toolOutput.calculations.length,2);const growthCalc=toolOutput.calculations[0];assert.equal(growthCalc.values.find(v=>v.unit==='%').value,'11.1111');assert.equal(toolOutput.calculations[1].values.find(v=>v.unit==='percentage points').value,'3.3334');
+assert.ok((await store.refreshQuestion(agentClaim.id,'alice')).workflow.steps.length>=2);
+const inputPassage=toolOutput.passages.find(p=>growthCalc.inputs[0].sourceIds.includes(p.id));
+const derivedText='**Revenue growth:** 11.11% year on year.';
+const calculatedAnswer={summary:derivedText,findings:[{text:derivedText,citations:[{chunkId:inputPassage.id,quote:inputPassage.text}],calculationIds:[growthCalc.id]}],missingEvidence:[]};
+assert.equal(store.validateResearchAnswer(calculatedAnswer,toolOutput.passages,'test-model',toolOutput.calculations).calculations.length,2);
+assert.throws(()=>store.validateResearchAnswer({...calculatedAnswer,findings:[{...calculatedAnswer.findings[0],calculationIds:['invented']}]},toolOutput.passages,'test-model',toolOutput.calculations),/unknown/);
+assert.throws(()=>store.validateResearchAnswer({...calculatedAnswer,findings:[{...calculatedAnswer.findings[0],calculationIds:[]}]},toolOutput.passages,'test-model',toolOutput.calculations),/unsupported/);
+assert.throws(()=>store.validateResearchAnswer({...calculatedAnswer,findings:[{...calculatedAnswer.findings[0],citations:[{chunkId:inputPassage.id,quote:'Consolidated Statement of Profit and Loss'}]}]},toolOutput.passages,'test-model',toolOutput.calculations),/input amounts/);
+await call('question/tools',{id:agentClaim.id,lease:agentClaim.lease,plan:{objective:'Evidence reviewed',calls:[]}});
+assert.equal((await handleResearch(service('question/tools',{id:agentClaim.id,lease:agentClaim.lease,plan:{objective:'Too many rounds',calls:[]}}))).status,400);
+await call('question/complete',{id:agentClaim.id,lease:agentClaim.lease,answer:calculatedAnswer});
+assert.equal((await store.refreshQuestion(agentClaim.id,'alice')).workflow.stage,'Answer and citations verified');
 sqlite.prepare('UPDATE research_documents SET active_version=NULL WHERE id=?').run(factDocument.id);
 assert.equal((await financials.getFinancialFacts('HINDUNILVR','operating_cash_flow','consolidated')).facts.length,0,'A retired source version cannot reappear through the fact cache');
 sqlite.close();

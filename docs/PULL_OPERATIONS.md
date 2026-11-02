@@ -67,6 +67,19 @@ that host and backs off; another independent primary source may be used.
 
 ## Safe updates and failure recovery
 
+Ask FINN uses `research-agent-1`: the VM asks the model to structure the question
+and select backend tools, executes at most four calls per round for two rounds,
+then requests a cited Markdown answer. All turns are serial and run only for a
+saved user question. `question/tools` is owner/lease/source-version bound. Tools
+can search/read indexed evidence, verify financial totals, compare periods and
+calculate reported profit/revenue margins. There is no arbitrary code execution.
+Derived claims must reference a saved calculation and cite the original input
+amounts. The answer displays formulas/inputs/sources; the standalone calculator
+panel has been removed. Workflow progress lives in `provider_cache` under
+`research-workflow:<question-id>` and old answers remain readable. Prompt/tool
+changes invalidate answer cache keys. A run may make up to three serial model
+turns, so its latency/usage can exceed the earlier single-pass answer.
+
 Run the Linux worker tests and shared transport tests before installation. Verify
 staged hashes. Avoid restarting during an active model turn; a stopped inference
 is never automatically repeated. Stop the research service before changing its

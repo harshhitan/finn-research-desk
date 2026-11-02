@@ -11,6 +11,34 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_research_plan_tools_review_and_final_context_are_bounded(self):
+        with tempfile.TemporaryDirectory() as path:
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))
+            usage={'inputTokens':10,'outputTokens':5,'cachedInputTokens':0,'reasoningOutputTokens':1,'totalTokens':15}
+            class Client:
+                last_usage=usage
+                def __init__(self):self.requests=[]
+                def analyse(self,request):
+                    self.requests.append(request)
+                    return {'objective':'Compare revenue','complete':len(self.requests)==2,'calls':[{'tool':'compare_facts'}] if len(self.requests)==1 else []}
+            client=Client();calls=[]
+            def api(action,body):
+                calls.append((action,body))
+                return {'results':[{'tool':'compare_facts','facts':[]}],'passages':[{'id':'real-source','text':'Reported revenue'}],'calculations':[{'id':'real-calculation'}]}
+            instance.api=api
+            question={'id':'q','lease':'l','model':'test-model','instructions':'final','outputSchema':{},'planner':{'instructions':'plan','outputSchema':{}},'input':{'question':'Revenue growth?','passages':[]}}
+            final,records=instance.research_workflow(client,question)
+            self.assertEqual(len(client.requests),2);self.assertEqual([c[0] for c in calls],['question/tools','question/tools'])
+            self.assertEqual(final['instructions'],'final');self.assertEqual(final['input']['passages'][0]['id'],'real-source')
+            self.assertEqual(final['input']['calculations'][0]['id'],'real-calculation');self.assertEqual(len(client.requests[1]['input']['previousToolResults']),1)
+            self.assertEqual(instance.total_usage(records)['totalTokens'],30)
+            self.assertEqual(question['input']['passages'],[],'Planner input must not mutate the original request')
+            client.analyse=lambda request:{'objective':'invalid','complete':True,'calls':[]}
+            with self.assertRaisesRegex(worker.ResearchError,'must retrieve'):instance.research_workflow(client,question)
+            client.analyse=lambda request:{'objective':'invalid','complete':False,'calls':[{}]*5}
+            with self.assertRaisesRegex(worker.ResearchError,'invalid bounded'):instance.research_workflow(client,question)
+            instance.cache.close()
+
     def test_validated_annual_format_is_reused_without_hiding_a_new_year(self):
         with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'0'}):
             instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path));checked=[]

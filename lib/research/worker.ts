@@ -3,6 +3,7 @@ import {database} from "../repository";
 import {annualPeriod,company,coverage,documents,enqueuePreparation,hash,parse,questionCacheKey,refreshQuestion,researchInstructions,researchAnswerSchema,seedResearch,stamp,synchronizeCompany,validateResearchAnswer,normalizeResearchUsage,sourceVersion} from "./store";
 import {seedResearchCompanies,type ResearchPassage} from "./types";
 import {researchTools} from "./tools";
+import {emptyWorkflow,saveWorkflow,readWorkflow,runWorkflowTools,planInstructions,planSchema} from './workflow';
 
 const environment=()=>env as unknown as Record<string,any>;
 export const artifacts=()=>environment().BUCKET as R2Bucket|undefined;
@@ -97,18 +98,28 @@ export async function researchWorkerAction(action:string,body:any){
     const lease=crypto.randomUUID();
     const q=await db.prepare("UPDATE research_questions SET status='running',lease=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=(SELECT id FROM research_questions WHERE owner=? AND status='queued' AND attempts=0 ORDER BY created_at LIMIT 1) AND status='queued' AND NOT EXISTS(SELECT 1 FROM research_questions WHERE status='running') RETURNING *").bind(lease,new Date(Date.now()+240000).toISOString(),now,owner).first<any>();
     if(!q)return {question:null};const context=await coverage(q.ticker);
-    return {question:{id:q.id,lease:q.lease,model:environment().FINN_PRIVATE_CODEX_MODEL,instructions:researchInstructions,outputSchema:researchAnswerSchema,input:{company:context.company,question:q.question,filters:parse(q.filters,{}),coverage:context,passages:parse(q.context,[])}}};
+    await saveWorkflow(q.id,emptyWorkflow());
+    await db.prepare("UPDATE research_questions SET lease_until=? WHERE id=? AND lease=?").bind(new Date(Date.now()+900000).toISOString(),q.id,q.lease).run();
+    return {question:{id:q.id,lease:q.lease,model:environment().FINN_PRIVATE_CODEX_MODEL,instructions:researchInstructions,outputSchema:researchAnswerSchema,planner:{instructions:planInstructions,outputSchema:planSchema},input:{company:context.company,question:q.question,filters:parse(q.filters,{}),coverage:{counts:context.counts,freshness:context.freshness,documents:context.documents.map(d=>({title:d.title,type:d.type,period:d.period,status:d.status}))},passages:parse(q.context,[])}}};
+  }
+  if(action==='question/tools'){
+    const q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND owner=? AND status='running' AND lease=? AND lease_until>?").bind(String(body.id||''),owner,String(body.lease||''),now).first<any>();
+    if(!q)throw new Error('Research question lease is missing or expired');
+    return runWorkflowTools(q,body.plan);
   }
   if(action==="question/complete"||action==="question/failed"){
     const q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND owner=? AND status='running' AND lease=? AND lease_until>?").bind(String(body.id||""),owner,String(body.lease||""),now).first<any>();
     if(!q)throw new Error("Research question lease is missing or expired");
     if(action.endsWith("failed")){
+      const flow=await readWorkflow(q.id);if(flow){flow.stage='Stopped — retry required';await saveWorkflow(q.id,flow);}
       await db.prepare("UPDATE research_questions SET status='error',error='Model request failed or its answer did not validate. Your evidence remains available; retry explicitly.',lease=NULL,lease_until=NULL,updated_at=? WHERE id=? AND lease=?").bind(now,q.id,q.lease).run();return {accepted:true};
     }
     if(await sourceVersion(q.ticker)!==q.source_version)throw new Error("Research evidence changed during analysis; retry against the new document versions");
     if(await questionCacheKey(q.ticker,q.question,parse(q.filters,{}),q.source_version)!==q.cache_key)throw new Error('Research model or prompt configuration changed during analysis; retry explicitly.');
-    const answer=validateResearchAnswer(body.answer,parse<ResearchPassage[]>(q.context,[]),String(environment().FINN_PRIVATE_CODEX_MODEL||"Codex")),usage=normalizeResearchUsage(body.usage);
+    const flow=await readWorkflow(q.id);
+    const answer=validateResearchAnswer(body.answer,parse<ResearchPassage[]>(q.context,[]),String(environment().FINN_PRIVATE_CODEX_MODEL||"Codex"),flow?.calculations||[]),usage=normalizeResearchUsage(body.usage);
     if(usage)answer.usage=usage;
+    if(flow){flow.stage='Answer and citations verified';await saveWorkflow(q.id,flow);}
     await db.prepare("UPDATE research_questions SET status='done',answer=?,error=NULL,lease=NULL,lease_until=NULL,updated_at=? WHERE id=? AND lease=? AND status='running'").bind(JSON.stringify(answer),now,q.id,q.lease).run();return {accepted:true};
   }
   const job=await leased(body);

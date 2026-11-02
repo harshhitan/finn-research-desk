@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.11'
+VERSION = 'research-2.12'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-2'
 DISCOVERY_POLICY = 'primary-links-3'
@@ -791,12 +791,17 @@ class Worker:
         client, value, stage = None, None, 'transport'
         try:
             client = module.Codex('/home/azureuser/.local/bin/codex', str(work))
+            if question.get('planner') and question.get('kind') != 'filing':
+                question, usage = self.research_workflow(client, question)
+            else:
+                usage = []
             value = client.analyse(question)
+            usage.append(getattr(client,'last_usage',None))
             stage='validation'
             if question.get('kind') == 'filing':
                 self.filing_api('complete', {'id':question['id'],'lease':question['lease'],'analysis':value})
             else:
-                self.api('question/complete', {'id': question['id'], 'lease': question['lease'], 'answer': value, 'usage':getattr(client,'last_usage',None)})
+                self.api('question/complete', {'id': question['id'], 'lease': question['lease'], 'answer': value, 'usage':self.total_usage(usage)})
         except Exception as error:
             self.record_model_failure(question,stage,error,value)
             raise
@@ -804,6 +809,38 @@ class Worker:
             if client:
                 client.close()
             os.chdir(previous)
+
+    @staticmethod
+    def total_usage(records):
+        fields=('inputTokens','outputTokens','cachedInputTokens','reasoningOutputTokens','totalTokens')
+        if not records or any(not isinstance(record,dict) or any(type(record.get(k)) is not int for k in fields) for record in records):
+            return None
+        return {key:sum(record[key] for record in records) for key in fields}
+
+    def research_workflow(self, client, question):
+        # The model selects bounded JSON tool requests. Only FINN's authenticated
+        # backend executes the allowlist, tied to this question/company/lease.
+        # No shell, Python eval, browser, MCP or arbitrary code execution.
+        final={**question,'input':{**question['input']}}
+        planner=question['planner'];observations=[];usage=[]
+        for round_index in range(2):
+            plan=client.analyse({'model':question['model'],'instructions':planner['instructions'],
+                'outputSchema':planner['outputSchema'],'input':{**final['input'],
+                'round':round_index+1,'maxRounds':2,'previousToolResults':list(observations)}})
+            usage.append(getattr(client,'last_usage',None))
+            if not isinstance(plan,dict) or type(plan.get('complete')) is not bool or not isinstance(plan.get('calls'),list) or len(plan['calls'])>4:
+                raise ResearchError('Research planner returned an invalid bounded plan')
+            if round_index == 0 and not plan['calls']:
+                raise ResearchError('Research planner must retrieve relevant evidence before answering')
+            response=self.api('question/tools',{'id':question['id'],'lease':question['lease'],'plan':plan})
+            observations.extend(response['results'])
+            final['input']['passages']=response['passages']
+            final['input']['calculations']=response['calculations']
+            final['input']['researchPlan']=plan['objective']
+            final['input']['toolResults']=observations
+            if plan['complete']:
+                break
+        return final,usage
 
     def record_model_failure(self,question,stage,error,answer):
         reason=str(error)
