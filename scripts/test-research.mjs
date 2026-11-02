@@ -276,7 +276,8 @@ const agentClaim=(await call('question/claim')).question;assert.equal(agentClaim
 const toolCall={tool:'compare_facts',query:'YoY',metric:'revenue_from_operations',scope:'consolidated',basePeriod:'FY2025',currentPeriod:'FY2026',ids:[]};
 assert.equal((await handleResearch(service('question/tools',{id:agentClaim.id,lease:'bad',plan:{objective:'Growth',calls:[toolCall]}}))).status,400);
 assert.equal((await handleResearch(service('question/tools',{id:agentClaim.id,lease:agentClaim.lease,plan:{objective:'Growth',calls:[{...toolCall,tool:'run_python'}]}}))).status,400,'The agent cannot run arbitrary code');
-const toolOutput=await call('question/tools',{id:agentClaim.id,lease:agentClaim.lease,plan:{objective:'Compare reported revenue and margins',calls:[toolCall,{...toolCall,tool:'calculate_margin',metric:''}]}});
+const toolOutput=await call('question/tools',{id:agentClaim.id,lease:agentClaim.lease,plan:{objective:'Compare reported revenue and margins',calls:[{...toolCall,currentPeriod:'FY2025-26'},toolCall,{...toolCall,tool:'calculate_margin',metric:''}]}});
+assert.match(toolOutput.results[0].error,/canonical/,'A malformed tool argument is returned for planner correction without discarding valid calls');
 assert.equal(toolOutput.calculations.length,2);const growthCalc=toolOutput.calculations[0];assert.equal(growthCalc.values.find(v=>v.unit==='%').value,'11.1111');assert.equal(toolOutput.calculations[1].values.find(v=>v.unit==='percentage points').value,'3.3334');
 assert.ok((await store.refreshQuestion(agentClaim.id,'alice')).workflow.steps.length>=2);
 const inputPassage=toolOutput.passages.find(p=>growthCalc.inputs[0].sourceIds.includes(p.id));
