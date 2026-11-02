@@ -290,7 +290,7 @@ assert.throws(()=>store.validateResearchAnswer({...calculatedAnswer,findings:[{.
 const rejectedReview=await call('question/review',{id:agentClaim.id,lease:agentClaim.lease,answer:{...calculatedAnswer,findings:[{...calculatedAnswer.findings[0],calculationIds:['invented']}]}});assert.equal(rejectedReview.valid,false);assert.match(rejectedReview.issue,/unknown/);
 assert.equal((await call('question/review',{id:agentClaim.id,lease:agentClaim.lease,answer:calculatedAnswer})).valid,true);
 assert.equal(sqlite.prepare('SELECT answer FROM research_questions WHERE id=?').get(agentClaim.id).answer,null,'Review never publishes an unverified draft');
-const signedPassage={...inputPassage,text:'IT Services revenue declined 1.6% in constant currency. Guidance was minus 1.5% to plus 0.5%.'},signedText='Revenue growth was -1.6%; guidance was -1.5% to 0.5%.';
+const signedPassage={...inputPassage,text:'IT Services revenue declined 1.6% in constant currency. Guidance was minus 1.5% to plus 0.5%.'},signedText='Revenue declined **1.6%**; guidance was **-1.5%** to **0.5%**.';
 assert.equal(store.validateResearchAnswer({summary:signedText,findings:[{text:signedText,citations:[{chunkId:signedPassage.id,quote:signedPassage.text}]}],missingEvidence:[]},[signedPassage],'test').summary,signedText,'Explicit source words such as minus and decline preserve negative signs');
 await call('question/tools',{id:agentClaim.id,lease:agentClaim.lease,plan:{objective:'Evidence reviewed',calls:[]}});
 assert.equal((await handleResearch(service('question/tools',{id:agentClaim.id,lease:agentClaim.lease,plan:{objective:'Too many rounds',calls:[]}}))).status,400);
