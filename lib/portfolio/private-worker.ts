@@ -9,6 +9,8 @@ import type {FilingContent} from '../filing-content';
 import {questionKey,questionPassages,questionComparisons} from './questions';
 import {researchInstructions,researchAnswerSchema,validateResearchAnswer,recoverVerifiedAnswer} from '../research/store';
 import type {ResearchPassage,ResearchCalculation} from '../research/types';
+import {validateReportPeriod} from './results';
+import type {FilingAnalysis} from './types';
 
 type Job={id:string;owner:string;filing_id:string;content_hash:string;model:string;attempts:number;lease:string;lease_until:string};
 type Evidence={content:FilingContent;sourceKind:'pdf'|'notice'|'market';fingerprint?:string;gaps:string[];passages:Passage[];questionContext?:ResearchPassage[];calculations?:ResearchCalculation[]};
@@ -118,9 +120,13 @@ export async function privateWorkerAction(action:string,body:any){
       const claims=(Array.isArray(body.analysis?.claims)?body.analysis.claims:[]).filter((c:any)=>verifiedClaim(c,e));
       const summary=claims.find((c:any)=>c.text===body.analysis.summary&&c.text.length<=800)||claims.find((c:any)=>c.text.length<=800),why=claims.find((c:any)=>c.text===body.analysis.whyItMatters&&c.text.length<=1000)||claims.find((c:any)=>c!==summary&&c.text.length<=1000)||summary;
       if(!summary||!why)throw new Error('Model summary and interpretation could not be verified');
-      const candidate={...body.analysis,summary:summary.text,whyItMatters:why.text,claims,metrics:[] as any[],executiveBackground:null,resultPeriod:null,evidenceGaps:[...(Array.isArray(body.analysis?.evidenceGaps)?body.analysis.evidenceGaps:[]).slice(0,5),'Some drafted details could not be verified against their sources and were omitted.']};
+      const candidate={...body.analysis,summary:summary.text,whyItMatters:why.text,claims,metrics:[] as any[],executiveBackground:null as FilingAnalysis['executiveBackground'],resultPeriod:null as FilingAnalysis['resultPeriod'],evidenceGaps:[...(Array.isArray(body.analysis?.evidenceGaps)?body.analysis.evidenceGaps:[]).slice(0,5),'Some drafted details could not be verified against their sources and were omitted.']};
       validateDraft(candidate,e,job.model);
-      for(const metric of Array.isArray(body.analysis?.metrics)?body.analysis.metrics:[]){try{validateAnalysis({...candidate,metrics:[metric]},e.passages,job.model,e.content.contentHash!);candidate.metrics.push(metric);}catch{/* Only independently verified figures survive. */}}
+      if(e.sourceKind==='pdf'){
+        try{candidate.resultPeriod=validateReportPeriod(body.analysis.resultPeriod,e.passages);}catch{/* Preserve only an independently evidenced primary period. */}
+        for(const metric of Array.isArray(body.analysis?.metrics)?body.analysis.metrics:[]){try{validateAnalysis({...candidate,metrics:[metric]},e.passages,job.model,e.content.contentHash!);candidate.metrics.push(metric);}catch{/* Only independently verified figures survive. */}}
+        if(verifiedClaim(body.analysis.executiveBackground,e))candidate.executiveBackground=body.analysis.executiveBackground;
+      }
       analysis=validateDraft(candidate,e,job.model);
     }
     analysis={...analysis,inputFingerprint:e.fingerprint,sourceKind:e.sourceKind,evidenceGaps:[...new Set([...e.gaps,...(analysis.evidenceGaps||[])])].slice(0,6)};
