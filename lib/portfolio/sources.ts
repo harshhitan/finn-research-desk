@@ -1,8 +1,24 @@
 import {completedSessionStats} from "../market-calculations";
+import {env} from 'cloudflare:workers';
 import type {Company} from "./companies";
 import {categories,type Category,type Filing,type Quote} from "./types";
 export const nseAnnouncements="https://www.nseindia.com/companies-listing/corporate-filings-announcements";
 export const rssUrl="https://nsearchives.nseindia.com/content/RSS/Online_announcements.xml";
+export const exchangeFetch:typeof fetch=async(input,init)=>{
+  const configuration=env as unknown as Record<string,string|undefined>;
+  if(configuration.FINN_RUNTIME!=='render')return fetch(input,init);
+  const source=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);
+  const base=configuration.FINN_VM_STORAGE_URL,token=configuration.FINN_VM_STORAGE_TOKEN;
+  if(!base||!token)throw new Error('VM exchange transport is not configured');
+  const origin=new URL(base);if(origin.protocol!=='https:'||origin.username||origin.password||origin.search||origin.hash)throw new Error('VM exchange transport requires HTTPS');
+  let destination:URL;
+  if(source.origin==='https://www.nseindia.com'&&source.pathname==='/api/corporate-announcements'){
+    destination=new URL('/v1/market/nse/announcements',origin);
+    for(const name of ['symbol','from_date','to_date']){const value=source.searchParams.get(name);if(value!==null)destination.searchParams.set(name,value);}
+  }else if(source.href===rssUrl)destination=new URL('/v1/market/nse/rss',origin);
+  else throw new Error('Unsupported exchange source');
+  return fetch(destination,{...init,headers:{Authorization:'Bearer '+token},redirect:'error'});
+};
 const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 export function exchangeDate(value:string){
   // NSE dates have no timezone suffix. They are explicitly Indian local time.
@@ -47,7 +63,7 @@ export async function boundedText(response:Response,max=6_000_000){
   const reader=response.body?.getReader();if(!reader)throw new Error("Empty provider response");let size=0;const decoder=new TextDecoder();let text="";
   try{while(true){const item=await reader.read();if(item.done)break;size+=item.value.byteLength;if(size>max)throw new Error("Provider response exceeds size limit");text+=decoder.decode(item.value,{stream:true});}return text+decoder.decode();}catch(e){await reader.cancel();throw e;}finally{reader.releaseLock();}
 }
-export async function nseFilings(company:Company,from:string,to:string,fetcher:typeof fetch=fetch):Promise<Filing[]>{
+export async function nseFilings(company:Company,from:string,to:string,fetcher:typeof fetch=exchangeFetch):Promise<Filing[]>{
   const format=(date:string)=>{const [y,m,d]=new Date(Date.parse(date)+330*60000).toISOString().slice(0,10).split("-");return `${d}-${m}-${y}`;};
   const url=new URL("https://www.nseindia.com/api/corporate-announcements");url.search=new URLSearchParams({index:"equities",symbol:company.ticker,from_date:format(from),to_date:format(to)}).toString();
   const text=await boundedText(await fetcher(url,{headers:{"User-Agent":"Mozilla/5.0","Accept":"application/json","Referer":nseAnnouncements},signal:AbortSignal.timeout(16000)}));

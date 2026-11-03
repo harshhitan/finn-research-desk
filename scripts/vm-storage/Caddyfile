@@ -2,6 +2,9 @@
     handle /v1/artifacts/research/* {
         reverse_proxy 127.0.0.1:8891
     }
+    handle /v1/market/nse/* {
+        reverse_proxy 127.0.0.1:8891
+    }
     handle {
         respond 404
     }

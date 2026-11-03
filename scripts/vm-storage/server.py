@@ -7,7 +7,10 @@ from pathlib import Path
 import re
 import tempfile
 import threading
-from urllib.parse import urlsplit
+from datetime import datetime
+from urllib.parse import urlsplit, parse_qs, urlencode
+import urllib.request
+import urllib.error
 
 ROOT = Path(os.environ.get('FINN_ARTIFACT_ROOT', '/var/lib/finn-research/artifacts')).resolve()
 CACHE = Path(os.environ.get('FINN_PDF_CACHE', '/var/lib/finn-research/cache')).resolve()
@@ -119,7 +122,67 @@ class Handler(BaseHTTPRequestHandler):
         self.download(head=True)
 
     def do_GET(self):
+        if urlsplit(self.path).path.startswith('/v1/market/nse/'):
+            self.exchange()
+            return
         self.download(head=False)
+
+    def exchange(self):
+        if not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + TOKEN):
+            self.reject(401)
+            return
+        try:
+            parsed = urlsplit(self.path)
+            if parsed.path == '/v1/market/nse/rss' and not parsed.query:
+                target = 'https://nsearchives.nseindia.com/content/RSS/Online_announcements.xml'
+                content_type = 'application/xml'
+            elif parsed.path == '/v1/market/nse/announcements':
+                query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
+                if set(query) - {'symbol', 'from_date', 'to_date'} or any(len(v) != 1 for v in query.values()):
+                    raise ValueError('Unexpected source parameters')
+                symbol = query.get('symbol', [''])[0]
+                if not re.fullmatch(r'[A-Z0-9&-]{1,25}', symbol):
+                    raise ValueError('Invalid ticker')
+                values = {'index': 'equities', 'symbol': symbol}
+                if 'from_date' in query or 'to_date' in query:
+                    dates = [query.get(name, [''])[0] for name in ['from_date', 'to_date']]
+                    if any(not re.fullmatch(r'\d{2}-\d{2}-\d{4}', value) for value in dates):
+                        raise ValueError('Invalid date')
+                    start, end = [datetime.strptime(value, '%d-%m-%Y') for value in dates]
+                    if not 0 <= (end - start).days <= 31:
+                        raise ValueError('Source window exceeds limit')
+                    values.update(from_date=dates[0], to_date=dates[1])
+                target = 'https://www.nseindia.com/api/corporate-announcements?' + urlencode(values)
+                content_type = 'application/json'
+            else:
+                self.reject(404)
+                return
+        except ValueError:
+            self.reject(400)
+            return
+        if not SLOTS.acquire(blocking=False):
+            self.reject(503)
+            return
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *_args):
+                return None
+        try:
+            request = urllib.request.Request(target, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json,application/xml', 'Referer': 'https://www.nseindia.com/companies-listing/corporate-filings-announcements'})
+            with urllib.request.build_opener(NoRedirect()).open(request, timeout=14) as upstream:
+                data = upstream.read(6_000_001)
+            if len(data) > 6_000_000:
+                self.reject(502)
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', content_type)
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(data)
+        except (urllib.error.URLError, OSError):
+            self.reject(502)
+        finally:
+            SLOTS.release()
 
     def download(self, head):
         target = self.artifact()

@@ -2,7 +2,7 @@ import {database} from "../repository";
 import {privateCodexConfig} from "./private-config";
 import {companies,companyByTicker} from "./companies";
 import {ensurePortfolio,sourceState} from "./storage";
-import {nseFilings,quoteFor,digest,boundedText,rssUrl,parseNseRss,classify,safeAttachment} from "./sources";
+import {nseFilings,quoteFor,digest,boundedText,rssUrl,parseNseRss,classify,safeAttachment,exchangeFetch} from "./sources";
 import {categories,type Filing,type MonitoringRules,type Quote} from "./types";
 import {queueAutomaticInterpretations} from './automatic';
 import {analysisBriefSql} from './projections';
@@ -68,7 +68,7 @@ async function collect(ticker:string){
     failures.push("NSE historical feed unavailable");
     try{
       const cache=await db.prepare("SELECT data,fetched_at FROM provider_cache WHERE key='portfolio-nse-rss'").first<{data:string;fetched_at:string}>();let xml=cache&&Date.now()-Date.parse(cache.fetched_at)<300000?cache.data:"";
-      if(!xml){xml=await boundedText(await fetch(rssUrl,{signal:AbortSignal.timeout(12000)}));await db.prepare("INSERT INTO provider_cache(key,data,fetched_at) VALUES('portfolio-nse-rss',?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at").bind(xml,new Date().toISOString()).run();}
+      if(!xml){xml=await boundedText(await exchangeFetch(rssUrl,{signal:AbortSignal.timeout(16000)}));await db.prepare("INSERT INTO provider_cache(key,data,fetched_at) VALUES('portfolio-nse-rss',?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at").bind(xml,new Date().toISOString()).run();}
       const now=new Date().toISOString();const records:Filing[]=[];
       for(const row of parseNseRss(xml,company)){const attachmentUrl=safeAttachment(row.url);const id=`nse-rss-${await digest(ticker+"|"+row.url+"|"+row.publishedAt)}`;records.push({id,ticker,exchangeId:id,title:row.description.slice(0,180)||row.title,description:row.description,...classify(row.description),publishedAt:row.publishedAt,attachmentUrl,sourceUrl:rssUrl,fetchedAt:now,firstSeenAt:now,datePrecision:"second"});}
       fresh=await storeFilings(records);await sourceState(ticker,"NSE announcements",false,"Latest exchange RSS only; historical backfill incomplete","NSE API unavailable; RSS fallback collected. Backfill retry scheduled.");

@@ -125,7 +125,7 @@ export async function evidenceSnapshot(ticker:string,question:string,filters:Res
 }
 export async function questionCacheKey(ticker:string,question:string,filters:ResearchFilters,version:string){
   const normalized={...(filters.period?{period:filters.period}:{}),...(filters.types?{types:[...new Set(filters.types)].sort()}: {})};
-  return hash(JSON.stringify([ticker,question.trim().replace(/\s+/g,' ').toLowerCase(),normalized,version,{prompt:'research-agent-1',retrieval:'intent-financial-8',validation:'citations-calculations-4',model:(env as unknown as Record<string,unknown>).FINN_PRIVATE_CODEX_MODEL||'Codex'}]));
+  return hash(JSON.stringify([ticker,question.trim().replace(/\s+/g,' ').toLowerCase(),normalized,version,{prompt:'research-agent-1',retrieval:'intent-financial-9',validation:'citations-calculations-4',model:(env as unknown as Record<string,unknown>).FINN_PRIVATE_CODEX_MODEL||'Codex'}]));
 }
 export async function synchronizeCompany(ticker:string,error:string|null=null){
   const db=database(),docs=await documents(ticker),indexed=docs.filter(d=>d.active_version);

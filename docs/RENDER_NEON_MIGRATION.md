@@ -47,34 +47,52 @@ and service credentials remain private.
   in-memory liveness response; database connectivity is checked once at startup
   so repeated health checks do not prevent Neon from suspending.
 - SQL preparation against Neon validated all 256 previously captured static
-  queries. Dynamic paths, real model answers and lease/concurrency checks still
-  need runtime verification; SQL preparation alone does not establish those.
+  queries. Live question processing and financial calculations also pass; SQL
+  preparation alone does not establish every dynamic path or concurrency case.
+- Render's direct NSE API/RSS requests were unavailable, while both official
+  endpoints returned 200 from the VM. The authenticated VM service now permits
+  only those fixed NSE destinations, with bounded payloads, date ranges, timeouts
+  and concurrency. It never forwards its service token to NSE. Render still
+  validates company identity and records the original official source URLs.
 - The collector and research worker accept an explicit `FINN_RESEARCH_SITE_URL`.
   Set it to the exact new HTTPS origin together with the protected config URL
   during cutover. Their default remains the existing Site.
 
-## Required before cutover
+## Verified behavior
 
 1. GitHub authorization, source upload, Render workspace selection and initial
    deployment are complete. Keep secrets in protected server configuration.
-2. Finish PostgreSQL query verification and verify atomic leases under concurrent
-   clients on an isolated branch.
+2. All 256 captured static SQL statements prepare against Neon. SQLite annual
+   suffixes, period patterns and case-insensitive matching have PostgreSQL
+   equivalents. Financial fact and answer cache versions were advanced.
 3. Both official Blueprint validators pass and Render server secrets are set.
-4. Verify visitor isolation and public model-queue access on the deployed server.
+4. Public submission and real model processing pass without ChatGPT sign-in.
+   A different visitor receives 404 for another session's question. Foreign-origin
+   writes, spoofed administrator access and anonymous worker access are rejected.
 5. Azure connectivity, VM TLS, local ranges/authentication and a Render-to-VM
-   authenticated PDF metadata check pass. Verify the visitor-facing PDF route.
+   authenticated PDF metadata check pass. A visitor-facing migrated Wipro PDF
+   returns 206 with the requested byte range and a valid PDF signature.
 6. Export the live data and originals, import into the destination, and verify
    counts, hashes, source links and owner/session mapping. Never import service
    tokens, OAuth credentials or stale active leases as ordinary application data.
    Completed using a short-lived authenticated bridge with page checksums and
    a final stable snapshot. The truncated table-row reader was not used to copy
    evidence. Login credentials and visitor histories were excluded.
-7. Update the VM's exact origin checks and endpoints after the Render URL exists.
-8. Check real question/answer processing, automatic interpretations, calculations,
-   citations, visitor isolation, restart persistence and desktop/mobile rendering.
+7. The existing worker and collection timer use the Render origin. The worker
+   reports `research-2.16`, model access ready, and no restarts during live checks.
+8. A real Infosys agent answer completed two rounds and used three verified
+   backend calculations: revenue growth, profit growth and margin change. Its
+   answer contains four citations, six calculation references and no evidence
+   gaps. A Wipro question also completed with cited financial figures.
+
+Automatic AI interpretation remains paused. Public questions invoke the model
+on demand; the hourly collection timer does not use an LLM. Prolonged idle,
+multi-client stress and final responsive-browser inspection were not performed;
+browser control became unavailable during the last inspection. The API and
+production build checks above establish the verified deployment behavior.
 
 Keep the original VM configuration and a rollback route to the existing Site
-until the remaining live-answer and isolation checks complete. The original
+for operational recovery. The original
 research service and collector sources are retained; their `render.conf` drop-ins
 select the new URL and protected `render-config.json`. Removing those drop-ins
 and restarting the services restores the original destination.
