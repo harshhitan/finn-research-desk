@@ -63,3 +63,31 @@ is a checklist, not a completion claim.
 Initial backfill remains an observable queue, not a claim that every historical
 filing is already interpreted. Automatic financial-result verification and final
 published mobile checks are recorded below when completed.
+
+## Capacity incident and corrective release
+
+The 3 November run exposed a shared provider-limit failure: all 89 worker failure
+records since 05:36:30 UTC were exactly `usageLimitExceeded`. The 33 unfinished
+automatic jobs with prior attempts also summed to 89, with no other failure
+reason in that service interval. Eleven automatic interpretations had succeeded.
+The provider subsequently reported available capacity again; the local 100-attempt
+allowance was still exhausted by the rejected calls.
+
+Worker `research-2.15` adds a private persisted cooldown, using the provider's
+reported reset time when available and bounded exponential waiting otherwise.
+It stops claiming both research and filing work during that wait. Quota-rejected
+work returns to a waiting state without consuming a filing retry or local daily
+allowance. Heartbeats expose only the waiting reason/time, never account secrets.
+The frontend distinguishes a daily allowance wait from actual preparation.
+The Linux suite now has 32 passing tests, including cooldown persistence across
+restart, read-only reset-time lookup and quota deferral. Research/portfolio SQLite
+tests cover deferred questions, refunded rejected claims and idempotent audited
+capacity recovery. An operator must stop the model worker, audit the journal and
+exact affected job attempts, then use `private-worker/recover-capacity` with those
+IDs/count/day and a unique incident key. Its durable receipt prevents a duplicate
+refund. No general SQL or account-reset operation is exposed.
+
+The corrective release also separates call-recording notices from actual result
+filings before prioritisation, updates pending priorities without creating new
+jobs, and retains independently verified primary periods when another optional
+model detail fails validation.

@@ -5,12 +5,48 @@ import socket
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_provider_cooldown_survives_restart_and_prevents_claims(self):
+        with tempfile.TemporaryDirectory() as path,patch.dict(worker.os.environ,{'FINN_RESEARCH_MODEL_ENABLED':'1'}):
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))
+            with patch.object(worker.importlib.util,'spec_from_file_location',side_effect=OSError('unavailable')):
+                until=instance.defer_model(RuntimeError('Codex turn did not complete (usageLimitExceeded)'))
+            self.assertGreater(worker.datetime.fromisoformat(until).timestamp(),time.time()+800)
+            instance.cache.close()
+            restarted=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path));restarted.api=lambda *args:self.fail('No job may be claimed during cooldown')
+            with patch.object(worker,'available_memory',return_value=300),patch.object(worker.subprocess,'run') as process:
+                self.assertFalse(restarted.answer_waiting_question());process.assert_not_called()
+            self.assertEqual((Path(path)/'model-cooldown.json').stat().st_mode&0o077,0);restarted.cache.close()
+
+    def test_provider_reset_time_is_used_without_inference_or_credit_redemption(self):
+        resets=time.time()+3600;calls=[]
+        class Client:
+            def __init__(self,*args):pass
+            def request(self,method,body):calls.append(method);return {'rateLimits':{'primary':{'usedPercent':100,'resetsAt':resets},'secondary':{'usedPercent':50}}}
+            def close(self):pass
+        with tempfile.TemporaryDirectory() as path:
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))
+            with patch.object(worker.importlib.util,'spec_from_file_location',return_value=SimpleNamespace(loader=SimpleNamespace(exec_module=lambda module:None))),patch.object(worker.importlib.util,'module_from_spec',return_value=SimpleNamespace(Codex=Client)):
+                instance.defer_model(RuntimeError('usageLimitExceeded'))
+            self.assertAlmostEqual(instance.model_cooldown()['until'],resets+60);self.assertEqual(calls,['account/rateLimits/read']);instance.cache.close()
+
+    def test_usage_limit_defers_the_claimed_filing_instead_of_failing_the_queue(self):
+        with tempfile.TemporaryDirectory() as path:
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path));instance.model_enabled=True;instance.model_ready=lambda:True
+            instance.api=lambda *args:{'question':None};instance.heartbeat=lambda:None;calls=[]
+            job={'id':'job','lease':'lease','kind':'filing'}
+            instance.filing_api=lambda action,body:calls.append((action,body)) or {'job':job}
+            instance.answer=lambda q:(_ for _ in ()).throw(RuntimeError('Codex turn did not complete (usageLimitExceeded)'))
+            with patch.object(worker,'available_memory',return_value=300),patch.object(worker.importlib.util,'spec_from_file_location',side_effect=OSError('unavailable')):
+                self.assertTrue(instance.answer_waiting_question())
+            self.assertEqual([c[0] for c in calls],['claim','failed']);self.assertEqual(calls[-1][1]['reason'],'usage_limit');self.assertIn('deferUntil',calls[-1][1]);instance.cache.close()
+
     def test_filing_preparation_finishes_before_model_work_and_uses_exchange_sources(self):
         with tempfile.TemporaryDirectory() as path:
             instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path));calls=[]

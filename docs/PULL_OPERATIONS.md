@@ -49,6 +49,15 @@ the result. Explicit research/filing questions take priority. Automatic work can
 be paused independently in Portfolio → AI settings; saved answers remain usable.
 No cloud LLM automation or second model service is required.
 
+Provider capacity rejections are shared waits, not individual filing failures.
+`model-cooldown.json` (0600) survives service restarts. The worker reads only
+`account/rateLimits/read` to use a reported reset time; it never consumes reset
+credits or sends account emails. Without a reported exhausted window, waiting
+backs off from 15 minutes to at most six hours. Both queues stop claiming during
+the wait, while document collection/preparation and saved answers remain usable.
+The rejected claim is returned without spending a retry or daily filing attempt.
+Portfolio AI settings show the actual allowance used and its IST reset.
+
 The old `finn-personal-worker.service` remains disabled. The collection-only
 `finn-collector.timer` is independent and must not be replaced with an LLM timer.
 

@@ -6,8 +6,9 @@ import {interpretationVersion} from './types';
 
 export {interpretationVersion} from './types';
 export const interpretationDay=(time=Date.now())=>new Date(time+330*60000).toISOString().slice(0,10);
-export type InterpretationSettings={enabled:boolean;dailyLimit:number;includeRoutine:boolean;updatedAt:string|null};
-export type InterpretationRequest={mode:'automatic'|'manual';kind?:'filing'|'market'|'question';version:string;priority?:'high'|'medium'|'routine';fingerprint?:string;stage?:string;question?:string;questionId?:string;market?:{ticker:string;sessionDate:string};requestedAt:string;error?:string|null};
+export type InterpretationSettings={enabled:boolean;dailyLimit:number;includeRoutine:boolean;updatedAt:string|null;usedToday?:number;resetsAt?:string};
+export type InterpretationRequest={mode:'automatic'|'manual';kind?:'filing'|'market'|'question';version:string;priority?:'high'|'medium'|'routine';fingerprint?:string;stage?:string;question?:string;questionId?:string;market?:{ticker:string;sessionDate:string};requestedAt:string;error?:string|null;attemptDay?:string};
+export async function interpretationAllowance(owner:string){const day=interpretationDay(),row=await database().prepare('SELECT data FROM provider_cache WHERE key=?').bind('portfolio-auto-usage:'+owner+':'+day).first<{data:string}>();return {usedToday:row?Number(JSON.parse(row.data).count)||0:0,resetsAt:day+'T18:30:00.000Z'};}
 export const requestKey=(id:string)=>'portfolio-request:'+id;
 export async function interpretationSettings(owner:string):Promise<InterpretationSettings>{
   const row=await database().prepare('SELECT data FROM provider_cache WHERE key=?').bind('portfolio-auto:'+owner).first<{data:string}>();
@@ -27,18 +28,19 @@ export async function queueAutomaticInterpretations(owner:string,filings:Filing[
   const settings=await interpretationSettings(owner);if(!settings.enabled||privateCodexConfig()?.owner!==owner)return {queued:0};
   const db=database(),now=new Date().toISOString(),model=privateCodexConfig()!.model;
   const [active,existing]=await Promise.all([
-    db.prepare("SELECT j.id,j.status FROM portfolio_private_jobs j JOIN provider_cache p ON p.key='portfolio-request:'||j.id WHERE j.owner=? AND j.status IN ('queued','retry','running','failed') AND json_extract(p.data,'$.mode')='automatic'").bind(owner).all<{id:string;status:string}>(),
+    db.prepare("SELECT j.id,j.status,json_extract(p.data,'$.priority') AS priority FROM portfolio_private_jobs j JOIN provider_cache p ON p.key='portfolio-request:'||j.id WHERE j.owner=? AND j.status IN ('queued','retry','running','failed') AND json_extract(p.data,'$.mode')='automatic'").bind(owner).all<{id:string;status:string;priority:string}>(),
     db.prepare('SELECT filing_id,data FROM portfolio_analysis WHERE owner=? ORDER BY updated_at DESC LIMIT 800').bind(owner).all<{filing_id:string;data:string}>(),
   ]);
   const done=new Map(existing.results.map(r=>[r.filing_id,JSON.parse(r.data) as FilingAnalysis])),statements:D1PreparedStatement[]=[];
-  const knownJobs=new Set(active.results.map(j=>j.id));
+  const knownJobs=new Map(active.results.map(j=>[j.id,j]));
   let room=Math.max(0,80-active.results.filter(j=>j.status!=='failed').length),queued=0;
   const rank={high:0,medium:1,routine:2};
   for(const f of [...filings].sort((a,b)=>rank[a.priority]-rank[b.priority]||b.publishedAt.localeCompare(a.publishedAt))){
-    if(!room||f.priority==='routine'&&!settings.includeRoutine)continue;
+    if(f.priority==='routine'&&!settings.includeRoutine)continue;
     const prior=done.get(f.id),fingerprint=await filingFingerprint(f);if(prior?.promptVersion===interpretationVersion&&prior.model===model&&prior.inputFingerprint===fingerprint)continue;
     const id='auto-'+await digest(owner+'|'+model+'|'+f.id+'|'+fingerprint),request:InterpretationRequest={mode:'automatic',kind:'filing',priority:f.priority,version:interpretationVersion,fingerprint,requestedAt:now,stage:'Queued for interpretation'};
-    if(knownJobs.has(id))continue;
+    const pending=knownJobs.get(id);if(pending){if(pending.priority!==f.priority)statements.push(db.prepare("UPDATE provider_cache SET data=json_set(data,'$.priority',?) WHERE key=?").bind(f.priority,requestKey(id)));continue;}
+    if(!room)continue;
     statements.push(db.prepare("INSERT OR IGNORE INTO portfolio_private_jobs(id,owner,filing_id,content_hash,model,status,created_at,available_at) VALUES(?,?,?,?,?,'queued',?,?)").bind(id,owner,f.id,'auto:'+fingerprint,model,now,now));
     statements.push(db.prepare('INSERT OR IGNORE INTO provider_cache(key,data,fetched_at) VALUES(?,?,?)').bind(requestKey(id),JSON.stringify(request),now));queued++;room--;
   }

@@ -97,7 +97,10 @@ assert.equal((await call('question/claim')).question,null,'Indexing works with m
 assert.equal((await handleResearch(user('/questions/'+question.id,'GET',null,'bob'))).status,404,'Question isolation');
 const same=await store.askQuestion('alice','TCS','What is operating cash flow?');assert.equal(same.id,question.id);
 await call('heartbeat',{modelReady:true,modelEnabled:true,memoryAvailableMb:300,workerVersion:'test'});
-const claimed=(await call('question/claim')).question;assert.equal(claimed.id,question.id);
+let claimed=(await call('question/claim')).question;assert.equal(claimed.id,question.id);
+const modelRetryAt=new Date(Date.now()+3600000).toISOString();await call('question/failed',{id:claimed.id,lease:claimed.lease,reason:'usage_limit',deferUntil:modelRetryAt});assert.equal(sqlite.prepare('SELECT attempts FROM research_questions WHERE id=?').get(claimed.id).attempts,0,'Capacity rejection preserves the question for automatic resumption');
+await call('heartbeat',{modelReady:false,modelEnabled:true,modelRetryAt,modelReason:'capacity',workerVersion:'test'});assert.equal((await call('question/claim')).question,null);assert.equal((await store.workerStatus()).modelRetryAt,modelRetryAt);
+await call('heartbeat',{modelReady:true,modelEnabled:true,workerVersion:'test'});claimed=(await call('question/claim')).question;assert.equal(claimed.id,question.id);
 assert.equal(claimed.outputSchema.properties.findings.items.properties.citations.maxItems,4,'Generation receives the validator citation budget');
 assert.equal(claimed.outputSchema.properties.findings.items.properties.citations.items.properties.quote.minLength,20,'Generation receives the minimum exact-quote length');
 const summary='Operating cash flow was 100 crore in 2026.';

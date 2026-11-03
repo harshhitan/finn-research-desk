@@ -13,6 +13,10 @@ export function exchangeDate(value:string){
   const date=new Date(value);if(!Number.isFinite(date.getTime()))throw new Error("Invalid exchange timestamp");return date.toISOString();
 }
 export function classify(text:string):{category:Category;priority:Filing["priority"]}{
+  // A call notice can mention the financial results it discusses. Its title and
+  // artifact type still identify a recording/transcript, not new results.
+  if(/^Analysts?\/Institutional Investor Meet\/Con\.\s*Call Updates/i.test(text))return /transcript|audio|recording|conference call|earnings call/i.test(text)?{category:'earnings_call',priority:'medium'}:{category:'investor_meetings',priority:'routine'};
+  if(/^Board Meeting Intimation\b/i.test(text)&&/financial results/i.test(text)&&!/fund rais|acquisition|merger/i.test(text))return {category:'unclassified',priority:'routine'};
   const rules:[Category,RegExp,Filing["priority"]][]=[
     ["results",/financial results|quarterly results|audited results|unaudited results/i,"high"],
     ["M&A",/acquisition|amalgamation|merger|demerger|restructuring/i,"high"],

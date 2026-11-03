@@ -33,8 +33,9 @@ export async function researchWorkerAction(action:string,body:any){
   const db=database(),now=stamp(),owner=environment().FINN_PRIVATE_CODEX_OWNER;
   if(!owner)throw new Error("Research worker owner is not configured");
   if(action==="heartbeat"){
-    const data={memoryAvailableMb:Number(body.memoryAvailableMb)||0,workerVersion:String(body.workerVersion||"").slice(0,40),modelEnabled:body.modelEnabled===true,lastChildPeakMb:Number(body.lastChildPeakMb)||0};
-    await db.prepare("INSERT INTO research_worker(id,last_seen,model_ready,data) VALUES('vm',?,?,?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,model_ready=excluded.model_ready,data=excluded.data").bind(now,body.modelReady===true?1:0,JSON.stringify(data)).run();return {ok:true};
+    const data={memoryAvailableMb:Number(body.memoryAvailableMb)||0,workerVersion:String(body.workerVersion||"").slice(0,40),modelEnabled:body.modelEnabled===true,lastChildPeakMb:Number(body.lastChildPeakMb)||0,modelRetryAt:typeof body.modelRetryAt==='string'&&Number.isFinite(Date.parse(body.modelRetryAt))?body.modelRetryAt:null,modelReason:body.modelReason?'ChatGPT capacity is temporarily unavailable. Saved answers and document preparation remain available.':null};
+    await db.prepare("INSERT INTO research_worker(id,last_seen,model_ready,data) VALUES('vm',?,?,?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,model_ready=excluded.model_ready,data=excluded.data").bind(now,body.modelReady===true?1:0,JSON.stringify(data)).run();
+    await db.prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at').bind('finn-model-availability:'+owner,JSON.stringify({modelReady:body.modelReady===true,modelRetryAt:data.modelRetryAt,modelReason:data.modelReason}),now).run();return {ok:true};
   }
   if(action==='evidence/check'){
     if(!text(body.ticker,25)||!await company(body.ticker)||!text(body.query,600)||body.query.trim().length<2)throw new Error('Choose an indexed company and bounded evidence query');
@@ -111,6 +112,10 @@ export async function researchWorkerAction(action:string,body:any){
     const q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND owner=? AND status='running' AND lease=? AND lease_until>?").bind(String(body.id||""),owner,String(body.lease||""),now).first<any>();
     if(!q)throw new Error("Research question lease is missing or expired");
     if(action.endsWith("failed")){
+      if(body.reason==='usage_limit'&&typeof body.deferUntil==='string'&&Date.parse(body.deferUntil)>Date.now()&&Date.parse(body.deferUntil)<Date.now()+15*86400000){
+        const flow=await readWorkflow(q.id);if(flow){flow.stage='Waiting for ChatGPT capacity';await saveWorkflow(q.id,flow);}
+        await db.prepare("UPDATE research_questions SET status='waiting_model',attempts=MAX(0,attempts-1),error=NULL,lease=NULL,lease_until=NULL,updated_at=? WHERE id=? AND lease=?").bind(now,q.id,q.lease).run();return {accepted:true,deferred:true};
+      }
       const flow=await readWorkflow(q.id);if(flow){flow.stage='Stopped — retry required';await saveWorkflow(q.id,flow);}
       await db.prepare("UPDATE research_questions SET status='error',error='Model request failed or its answer did not validate. Your evidence remains available; retry explicitly.',lease=NULL,lease_until=NULL,updated_at=? WHERE id=? AND lease=?").bind(now,q.id,q.lease).run();return {accepted:true};
     }

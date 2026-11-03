@@ -6,7 +6,7 @@ from ingestion, and require both an explicit setting and a current Codex login.
 import argparse
 import contextlib
 import csv
-from datetime import date
+from datetime import date, datetime, timezone
 import hashlib
 import http.client
 from html.parser import HTMLParser
@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.14'
+VERSION = 'research-2.15'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-2'
 DISCOVERY_POLICY = 'primary-links-3'
@@ -547,12 +547,46 @@ class Worker:
     def model_ready(self):
         if not self.model_enabled:
             return False
+        if self.model_cooldown().get('until',0)>time.time():
+            return False
         result = subprocess.run(['/home/azureuser/.local/bin/codex', 'login', 'status'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
         return result.returncode == 0
 
+    def model_cooldown(self):
+        try:
+            value=json.loads((self.state/'model-cooldown.json').read_text())
+            return value if isinstance(value,dict) and isinstance(value.get('until'),(int,float)) else {}
+        except (OSError,ValueError):
+            return {}
+
+    def defer_model(self,error):
+        previous=self.model_cooldown();failures=min(int(previous.get('failures',0))+1,6)
+        until=time.time()+min(900*2**(failures-1),21600)
+        # Read capacity only; this starts no model turn, sends no email and does
+        # not consume a paid/earned reset. Never read the client's auth files.
+        client=None
+        try:
+            spec=importlib.util.spec_from_file_location('finn_limits_transport',Path('/home/azureuser/finn-personal/worker.py'))
+            module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+            work=self.state/'model-work';work.mkdir(exist_ok=True)
+            client=module.Codex('/home/azureuser/.local/bin/codex',str(work))
+            limits=client.request('account/rateLimits/read',{}).get('rateLimits') or {}
+            resets=[window['resetsAt'] for window in (limits.get('primary'),limits.get('secondary')) if isinstance(window,dict) and isinstance(window.get('usedPercent'),(int,float)) and window['usedPercent']>=100 and isinstance(window.get('resetsAt'),(int,float)) and time.time()<window['resetsAt']<time.time()+14*86400]
+            if resets:until=max(resets)+60
+        except Exception:
+            pass
+        finally:
+            if client:client.close()
+        value={'until':until,'failures':failures,'reason':'usage_limit' if 'usageLimitExceeded' in str(error) else 'rate_limit'}
+        with os.fdopen(os.open(self.state/'model-cooldown.json',os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600),'w') as output:json.dump(value,output)
+        return datetime.fromtimestamp(until,timezone.utc).isoformat()
+
     def heartbeat(self):
+        cooldown=self.model_cooldown();waiting=cooldown.get('until',0)>time.time()
         return self.api('heartbeat', {'memoryAvailableMb': available_memory(), 'workerVersion': VERSION,
             'modelReady': self.model_ready(), 'modelEnabled': self.model_enabled,
+            'modelRetryAt':datetime.fromtimestamp(cooldown['until'],timezone.utc).isoformat() if waiting else None,
+            'modelReason':'ChatGPT capacity is temporarily unavailable. Saved answers and document preparation remain available.' if waiting else None,
             'lastChildPeakMb': round(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024, 1)})
 
     def progress(self, job, stage, progress):
@@ -947,13 +981,20 @@ class Worker:
                     return False
                 question={**question,'kind':question.get('kind','filing')}
             self.answer(question)
-        except Exception:
+            if (self.state/'model-cooldown.json').exists():
+                (self.state/'model-cooldown.json').write_text('{"until":0,"failures":0}')
+        except Exception as error:
+            deferred={}
+            if any(code in str(error) for code in ('usageLimitExceeded','rateLimitExceeded')):
+                deferred={'deferUntil':self.defer_model(error),'reason':'usage_limit'}
             if question:
                 with contextlib.suppress(Exception):
                     if question.get('kind') in ('filing','filing_question'):
-                        self.filing_api('failed',{'id':question['id'],'lease':question['lease']})
+                        self.filing_api('failed',{'id':question['id'],'lease':question['lease'],**deferred})
                     else:
-                        self.api('question/failed',{'id':question['id'],'lease':question['lease']})
+                        self.api('question/failed',{'id':question['id'],'lease':question['lease'],**deferred})
+            if deferred:
+                with contextlib.suppress(Exception):self.heartbeat()
             print(json.dumps({'status':'model_request_deferred_or_failed','evidenceRetained':True}),flush=True)
         return question is not None
 

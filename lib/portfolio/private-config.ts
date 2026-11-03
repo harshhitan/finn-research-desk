@@ -7,8 +7,9 @@ export function privateCodexConfig(){
 export async function privateCodexStatus(owner:string){
   const config=privateCodexConfig();if(!config||config.owner!==owner)return null;
   const state=await database().prepare("SELECT last_seen FROM portfolio_private_worker WHERE owner=?").bind(owner).first<{last_seen:string}>();
-  const online=!!state&&Date.now()-Date.parse(state.last_seen)<300000;
-  return {configured:true,connected:online,mode:"private_codex",model:config.model,connectedAt:state?.last_seen||null,reason:online?"Your VM worker is online. Portfolio interpretations and requested answers run one at a time using your ChatGPT subscription.":"Your VM worker has not checked in recently. Requested analyses wait until model access and memory are available."};
+  const worker=await database().prepare('SELECT data,fetched_at FROM provider_cache WHERE key=?').bind('finn-model-availability:'+owner).first<{data:string;fetched_at:string}>(),shared=worker&&Date.now()-Date.parse(worker.fetched_at)<300000?JSON.parse(worker.data):null;
+  const online=!!shared||!!state&&Date.now()-Date.parse(state.last_seen)<300000;
+  return {configured:true,connected:online,mode:"private_codex",model:config.model,modelReady:shared?.modelReady,retryAt:shared?.modelRetryAt||null,connectedAt:shared?worker!.fetched_at:state?.last_seen||null,reason:online?shared?.modelReason||"Your VM worker is online. Portfolio interpretations and requested answers run one at a time using your ChatGPT subscription.":"Your VM worker has not checked in recently. Requested analyses wait until model access and memory are available."};
 }
 export async function enqueuePrivateAnalysis(owner:string,filingId:string,hash:string,requested=false){
   const config=privateCodexConfig();if(!config||config.owner!==owner)throw new Error("ChatGPT personal worker is not configured for this account");

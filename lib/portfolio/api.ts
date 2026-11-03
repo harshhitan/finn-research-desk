@@ -5,7 +5,7 @@ import {analyseFiling,portfolioDocument,resultsForFiling} from "./analysis";
 import {subscriptionStatus,startSubscription,finishSubscription,disconnectSubscription} from "./chatgpt-auth";
 import {privateWorkerAction} from "./private-worker";
 import {privateCodexConfig} from "./private-config";
-import {interpretationSettings,saveInterpretationSettings,queueAutomaticInterpretations,readInterpretationRequest} from './automatic';
+import {interpretationSettings,interpretationAllowance,saveInterpretationSettings,queueAutomaticInterpretations,readInterpretationRequest} from './automatic';
 import {alertInteraction,alertStates} from './interactions';
 import {queueFilingQuestion,readFilingQuestion} from './questions';
 const clearedCookie="finn_chatgpt_oauth=; HttpOnly; Secure; SameSite=Lax; Path=/api/portfolio/chatgpt; Max-Age=0";
@@ -16,7 +16,7 @@ export async function handlePortfolio(request:Request){
   try{
     const local=["127.0.0.1","localhost"].includes(url.hostname),identity=request.headers.get("oai-authenticated-user-id");
     const secret=(env as unknown as Record<string,string>).FINN_MONITOR_JOB_TOKEN;
-    const worker=path.match(/^private-worker\/(claim|complete|failed|settings|progress|evidence|prepared|tools|review)$/);
+    const worker=path.match(/^private-worker\/(claim|complete|failed|settings|progress|evidence|prepared|tools|review|recover-capacity)$/);
     const unattended=(path==="jobs/run"&&request.method==="POST"||path==="jobs/status"&&request.method==="GET"||!!worker&&request.method==="POST")&&await equalSecret(request.headers.get("X-Finn-Job-Token")||"",secret||"");
     if(!identity&&!local&&!unattended)return json({error:"Sign in to FINN to access portfolio monitoring."},401);
     if(request.method!=="GET"&&!unattended){const origin=request.headers.get("origin");if(!origin||origin!==url.origin)return json({error:"A same-origin portfolio request is required."},403);}
@@ -37,7 +37,7 @@ export async function handlePortfolio(request:Request){
       const automatic=await interpretationSettings(who.owner);
       if(automatic.enabled){await database().prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at').bind('portfolio-auto-window:'+who.owner,JSON.stringify({from:new Date(from).toISOString(),to:new Date(to).toISOString()}),new Date().toISOString()).run();await queueAutomaticInterpretations(who.owner,snapshot.filings,snapshot.quotes);}
       const privateJobs=privateCodexConfig()?.owner===who.owner?(await database().prepare("SELECT j.id,j.filing_id,j.status,j.error,j.created_at,EXISTS(SELECT 1 FROM provider_cache p WHERE p.key='portfolio-request:'||j.id) AS requested,json_extract(p.data,'$.mode') AS mode,json_extract(p.data,'$.stage') AS stage FROM portfolio_private_jobs j LEFT JOIN provider_cache p ON p.key='portfolio-request:'||j.id WHERE owner=? ORDER BY created_at DESC LIMIT 600").bind(who.owner).all()).results:[];
-      return json({...snapshot,privateJobs,automatic,alertStates:await alertStates(who.owner),subscription:await subscriptionStatus(who.owner)});
+      return json({...snapshot,privateJobs,automatic:{...automatic,...await interpretationAllowance(who.owner)},alertStates:await alertStates(who.owner),subscription:await subscriptionStatus(who.owner)});
     }
     if(path==='interpretation/settings'&&request.method==='PUT')return json(await saveInterpretationSettings(who.owner,await request.json()));
     if(path==='interpretation/retry'&&request.method==='POST'){
