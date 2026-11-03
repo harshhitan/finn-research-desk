@@ -112,9 +112,10 @@ Render Node server. For Render, use `npm run build:render` and
 `npm run start:render`, with the server environment in `.env.example`.
 Render uses Neon PostgreSQL and authenticated VM document storage. Its signed
 visitor sessions allow public AI questions without ChatGPT sign-in.
-The Render service is live at https://finn-research-desk.onrender.com. Data
-transfer, VM public HTTPS connectivity, worker cutover and live AI verification
-remain. See `docs/RENDER_NEON_MIGRATION.md`.
+The Render service is live at https://finn-research-desk.onrender.com. Shared data
+is imported into Neon, originals are retained on the VM, and the existing VM
+worker now connects to Render. See `docs/RENDER_NEON_MIGRATION.md` for validation
+status and operational details.
 
 ## Research API
 

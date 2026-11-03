@@ -1,5 +1,5 @@
 import {env} from "cloudflare:workers";
-import {database,session} from "../repository";
+import {database,session,requestOrigin} from "../repository";
 import {seedPortfolio,enqueueCollection,runJobs,portfolioSnapshot,saveMonitoringRules,monitoringRules} from "./monitor";
 import {analyseFiling,portfolioDocument,resultsForFiling} from "./analysis";
 import {subscriptionStatus,startSubscription,finishSubscription,disconnectSubscription} from "./chatgpt-auth";
@@ -20,7 +20,7 @@ export async function handlePortfolio(request:Request){
     const worker=path.match(/^private-worker\/(claim|complete|failed|settings|progress|evidence|prepared|tools|review|recover-capacity|inspect)$/);
     const unattended=(path==="jobs/run"&&request.method==="POST"||path==="jobs/status"&&request.method==="GET"||!!worker&&request.method==="POST")&&await equalSecret(request.headers.get("X-Finn-Job-Token")||"",secret||"");
     if(!identity&&!local&&!unattended)return json({error:"Sign in to FINN to access portfolio monitoring."},401);
-    if(request.method!=="GET"&&!unattended){const origin=request.headers.get("origin");if(!origin||origin!==url.origin)return json({error:"A same-origin portfolio request is required."},403);}
+    if(request.method!=="GET"&&!unattended){const origin=request.headers.get("origin");if(!origin||origin!==requestOrigin(request))return json({error:"A same-origin portfolio request is required."},403);}
     if(Number(request.headers.get("content-length"))>(worker?350000:16000))return json({error:"Request is too large"},413);
     const jobKind=url.searchParams.get("kind");
     if((path==="jobs/run"||path==="jobs/status")&&jobKind!==null&&jobKind!=="collect")return json({error:"Unsupported job kind."},400);

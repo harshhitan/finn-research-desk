@@ -1,6 +1,6 @@
 import rawCorpus from "../../../data/reliance.json";
 import { answerQuestion, buildFeed } from "../../../lib/finance";
-import { database, getRules, saved, session } from "../../../lib/repository";
+import { database, getRules, saved, session, requestOrigin } from "../../../lib/repository";
 import { getMarket } from "../../../lib/market";
 import { getAnnouncements, issuerDocuments, issuerFeed } from "../../../lib/announcements";
 import { readFiling, type FilingContent } from "../../../lib/filing-content";
@@ -31,7 +31,7 @@ async function handle(request:Request) {
   const who=session(request);const url=new URL(request.url);const path=url.pathname.replace(/^\/api\/?/,"");
   const headers:Record<string,string>={"Cache-Control":"no-store","Content-Type":"application/json"};if(who.cookie)headers["Set-Cookie"]=who.cookie;
   const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers});
-  if(request.method!=="GET") {const origin=request.headers.get("origin");if(origin && origin!==url.origin)return json({error:"Cross-origin write rejected"},403);}
+  if(request.method!=="GET") {const origin=request.headers.get("origin");if(origin && origin!==requestOrigin(request))return json({error:"Cross-origin write rejected"},403);}
   try{
     if(path==="health")return json({status:"ok",company:"RELIANCE",database:(await database().prepare("SELECT 1 AS ok").first())?"ready":"unavailable",researchMode:"extractive",corpusVersion:rawCorpus.researchedAt});
     if(path==="plots"&&request.method==="GET")return json({tool:"plot_verified_data",recipes:plotCatalogue,policy:"Only validated stored facts or timestamped provider observations. No caller-supplied values, interpolation or forecasts."});

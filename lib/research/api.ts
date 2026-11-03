@@ -1,4 +1,4 @@
-import {database,session} from "../repository";
+import {database,session,requestOrigin} from "../repository";
 import {askQuestion,companies,company,enqueuePreparation,hydrateQuestion,readPassages,refreshQuestion,seedResearch,stamp,workerStatus} from "./store";
 import {canonicalTicker,directoryPending,resolveCompany,searchCompanies,researchTools} from "./tools";
 import {artifacts,putArtifact,researchWorkerAction,workerAuthorised} from "./worker";
@@ -28,7 +28,7 @@ export async function handleResearch(request:Request){
     // The same protected ingestion service may verify stored public-source PDFs.
     // It never receives a visitor identity or access to their question history.
     if(!identity&&!local&&!(originalRead&&await workerAuthorised(request)))return json({error:"Sign in to FINN to use company research."},401);
-    if(!['GET','HEAD'].includes(request.method)&&request.headers.get("origin")!==url.origin)return json({error:"A same-origin research request is required."},403);
+    if(!['GET','HEAD'].includes(request.method)&&request.headers.get("origin")!==requestOrigin(request))return json({error:"A same-origin research request is required."},403);
     if(Number(request.headers.get("content-length"))>12000)return json({error:"Research request is too large."},413);
     await seedResearch();
     if(path===""&&request.method==="GET"){

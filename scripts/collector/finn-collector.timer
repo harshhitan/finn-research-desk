@@ -1,0 +1,13 @@
+[Unit]
+Description=Hourly FINN portfolio collection
+
+[Timer]
+# Matches the previous schedule's :35 Asia/Calcutta cadence.
+OnCalendar=*-*-* *:05:00 UTC
+Persistent=true
+RandomizedDelaySec=30
+AccuracySec=1s
+Unit=finn-collector.service
+
+[Install]
+WantedBy=timers.target

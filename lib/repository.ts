@@ -2,6 +2,11 @@ import { env } from "cloudflare:workers";
 import { defaultRules } from "./finance";
 import type { Rules } from "./types";
 export function database() { if(!env.DB) throw new Error("Persistent storage is unavailable. Please try again later."); return env.DB; }
+export function requestOrigin(request:Request){
+  const runtime=env as unknown as Record<string,string|undefined>;
+  const configured=runtime.FINN_RUNTIME==='render'&&(runtime.FINN_PUBLIC_ORIGIN||runtime.RENDER_EXTERNAL_URL);
+  return configured?new URL(configured).origin:new URL(request.url).origin;
+}
 export function session(request: Request) {
   const user = request.headers.get("oai-authenticated-user-id");
   const cookie = request.headers.get("cookie")?.match(/(?:^|;\s*)finn_session=([a-z0-9-]{36})/i)?.[1]; const id = user || cookie || crypto.randomUUID();

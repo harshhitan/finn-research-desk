@@ -3,6 +3,7 @@ import next from 'next';
 import {prepareVisitorRequest} from '../../lib/public-session.mjs';
 import {timingSafeEqual} from 'node:crypto';
 import {recordWorkerHeartbeat,wakeWorkerQueue,shouldCheckWorkerQueue} from '../../lib/runtime-worker-state.mjs';
+import {postgresDatabase} from '../../lib/postgres-database.mjs';
 
 const port=Number(process.env.PORT||3000),hostname='0.0.0.0';
 const origin=new URL(process.env.FINN_PUBLIC_ORIGIN||process.env.RENDER_EXTERNAL_URL||`http://localhost:${port}`).origin;
@@ -16,6 +17,9 @@ const claims=new Map([['/api/research/worker/claim','job'],['/api/research/worke
 const send=(response,status,value)=>{response.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});response.end(JSON.stringify(value));};
 async function workerGateway(request,response){
   const path=new URL(request.url,origin).pathname;
+  // Render probes this frequently. Validate the database once on startup;
+  // recurring liveness checks must let an idle Neon compute suspend.
+  if(path==='/api/health'&&['GET','HEAD'].includes(request.method)){send(response,200,{status:'ok',runtime:'render'});return true;}
   const service=path.startsWith('/api/research/worker/')||path.startsWith('/api/portfolio/private-worker/')||['/api/portfolio/jobs/run','/api/portfolio/jobs/status'].includes(path);
   if(service&&!serviceAuthorised(request)){send(response,401,{error:'Worker authorization is required.'});return true;}
   if(service&&path==='/api/research/worker/heartbeat'&&request.method==='POST'){
@@ -27,6 +31,8 @@ async function workerGateway(request,response){
   }else if(path.startsWith('/api/'))wakeWorkerQueue();
   return false;
 }
+const readiness=postgresDatabase(process.env.DATABASE_URL);
+try{await readiness.prepare('SELECT 1 AS ready').first();}finally{await readiness.close();}
 const app=next({dev:false,hostname,port}),handler=app.getRequestHandler();await app.prepare();
 const server=http.createServer(async(request,response)=>{
   try{

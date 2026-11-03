@@ -1,0 +1,31 @@
+[Unit]
+Description=FINN scheduled portfolio collection (no AI agent)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=azureuser
+Group=azureuser
+ExecStart=/usr/bin/python3 -B /home/azureuser/finn-personal/collector.py
+WorkingDirectory=/home/azureuser/finn-personal
+Environment=PYTHONUNBUFFERED=1
+RuntimeDirectory=finn-collector
+RuntimeDirectoryMode=0700
+StateDirectory=finn-collector
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=60
+TimeoutStartSec=20min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+InaccessiblePaths=/home/azureuser/.codex
+ReadWritePaths=/run/finn-collector /var/lib/finn-collector
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=128M
+TasksMax=16
