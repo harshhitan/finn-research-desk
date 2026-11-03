@@ -32,6 +32,12 @@ export async function putArtifact(request:Request,jobId:string,digest:string,for
 export async function researchWorkerAction(action:string,body:any){
   const db=database(),now=stamp(),owner=environment().FINN_PRIVATE_CODEX_OWNER,publicAI=environment().FINN_PUBLIC_AI==='1'?1:0;
   if(!owner)throw new Error("Research worker owner is not configured");
+  if(action==='storage/check'){
+    if(!contentHash(body.hash))throw new Error('Choose a valid document content hash');
+    const bucket=artifacts();if(!bucket)throw new Error('Document storage is not configured');
+    const head=await bucket.head(`research/${body.hash.slice(0,2)}/${body.hash}.pdf`);
+    return {reachable:true,stored:!!head,size:head?.size||0};
+  }
   if(action==="heartbeat"){
     const data={memoryAvailableMb:Number(body.memoryAvailableMb)||0,workerVersion:String(body.workerVersion||"").slice(0,40),modelEnabled:body.modelEnabled===true,lastChildPeakMb:Number(body.lastChildPeakMb)||0,modelRetryAt:typeof body.modelRetryAt==='string'&&Number.isFinite(Date.parse(body.modelRetryAt))?body.modelRetryAt:null,modelReason:body.modelReason?'ChatGPT capacity is temporarily unavailable. Saved answers and document preparation remain available.':null};
     await db.prepare("INSERT INTO research_worker(id,last_seen,model_ready,data) VALUES('vm',?,?,?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,model_ready=excluded.model_ready,data=excluded.data").bind(now,body.modelReady===true?1:0,JSON.stringify(data)).run();
