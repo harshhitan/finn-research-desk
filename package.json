@@ -12,11 +12,10 @@
     "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "test": "node scripts/test-finance.mjs",
-    "test:portfolio": "node scripts/test-portfolio.mjs",
-    "test:portfolio-api": "node scripts/test-portfolio-api.mjs",
-    "test:results": "node scripts/test-results.mjs",
-    "test:results-view": "node scripts/test-results-view.mjs"
+    "typecheck": "tsc --noEmit --incremental false",
+    "db:migrate:neon": "node scripts/neon/migrate.mjs",
+    "build:render": "next build --webpack",
+    "start:render": "node scripts/render/start.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -32,6 +31,7 @@
     "lucide-react": "^1.31.0",
     "next": "16.3.4",
     "next-themes": "^0.4.6",
+    "pg": "^8.23.1",
     "radix-ui": "^1.6.7",
     "react": "19.2.6",
     "react-day-picker": "^10.0.1",
@@ -50,6 +50,7 @@
     "@cloudflare/workers-types": "4.20260515.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
+    "@types/pg": "^8.23.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",

@@ -489,8 +489,13 @@ def download(url, directory):
 
 class Worker:
     def __init__(self, config, state):
-        if config.get('url') != SITE or not isinstance(config.get('serviceToken'), str):
+        expected_site = os.environ.get('FINN_RESEARCH_SITE_URL', SITE).rstrip('/')
+        parsed_site = urllib.parse.urlsplit(expected_site)
+        if parsed_site.scheme != 'https' or not parsed_site.hostname or parsed_site.username or parsed_site.password or parsed_site.path or parsed_site.query or parsed_site.fragment:
+            raise ResearchError('Research origin must be a plain HTTPS origin')
+        if config.get('url', '').rstrip('/') != expected_site or not isinstance(config.get('serviceToken'), str):
             raise ResearchError('Unexpected private Site configuration')
+        self.site = expected_site
         self.config, self.state = config, state
         self.state.mkdir(parents=True, exist_ok=True)
         self.opener = urllib.request.build_opener(NoRedirect())
@@ -512,7 +517,7 @@ class Worker:
         raw = json.dumps(body).encode()
         if len(raw) > 250000:
             raise ResearchError('Research upload batch exceeds the size limit')
-        req = urllib.request.Request(SITE + path, data=raw,
+        req = urllib.request.Request(self.site + path, data=raw,
             headers={'Content-Type': 'application/json', 'OAI-Sites-Authorization': 'Bearer ' + self.config['serviceToken'], 'X-Finn-Job-Token': self.config['serviceToken']})
         try:
             with self.opener.open(req, timeout=60) as response:
@@ -530,7 +535,8 @@ class Worker:
             raise ResearchError('FINN research HTTP ' + str(code) + ': ' + str(value)[:300]) from None
 
     def upload(self, job, digest, path, extension):
-        connection = http.client.HTTPSConnection(urllib.parse.urlsplit(SITE).hostname, timeout=90, context=ssl.create_default_context())
+        parsed_site = urllib.parse.urlsplit(self.site)
+        connection = http.client.HTTPSConnection(parsed_site.hostname, parsed_site.port, timeout=90, context=ssl.create_default_context())
         try:
             with path.open('rb') as data:
                 connection.request('PUT', '/api/research/worker/artifact/' + job['id'] + '/' + digest + '/' + extension,

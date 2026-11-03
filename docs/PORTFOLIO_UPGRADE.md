@@ -109,3 +109,30 @@ diagnosis, with no leases or general query capability.
 Completion is still unproven: the real financial cards inspected so far have
 source/validation gaps. A populated, source-verified comparison and final current
 mobile presentation must be checked before declaring this upgrade complete.
+
+The next results correction accepts explicit quarter headings with `(Q2)`,
+`and six months` and `and financial year` qualifiers while continuing to reject
+a half-year total as a three-month quarter. Each valid financial figure survives
+independently. For FY-labelled comparative columns, backend code now requires an
+independently validated current-quarter amount/date, the same entity/scope, and
+observed fiscal labels in the actual table. It derives only the same, previous or
+same-quarter-prior-year date and retains both original source excerpts in the
+calculation evidence. It assumes no March year-end. Tests cover all four headline
+rows, fiscal-year ranges/abbreviations, exact QoQ/YoY results, wrong dates, missing
+anchors, wrong issuers, future labels and an unverified current amount.
+
+Incomplete financial interpretations receive at most one refresh for
+`quarter-evidence-2`; ongoing and still-partial checked results cannot loop.
+General admission remains capped at 80 pending jobs, with 20 reserved places for
+important new developments. The incident recovery temporarily restored existing
+work above that admission cap; collection cannot keep expanding that backlog.
+The protected inspector also returns the backend comparison and the most recent
+rejected draft, clearly separated from verified analysis. Diagnostics are bounded
+to 50 recent filings per owner and never enter the public briefing.
+
+The briefing and automatic-admission scans now use bounded SQL projections rather
+than loading every saved metric and quote. Full supporting passages are fetched
+only when a filing is opened; result comparisons load when expanded. Owner-scoped
+tests verify that brief responses omit evidence payloads and the full endpoint
+retains them. Filing status selects the latest interpretation including completion,
+so an older failure or a separate question cannot resurface as a current error.

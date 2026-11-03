@@ -1,6 +1,6 @@
 import {env} from "cloudflare:workers";
 import {database} from "../repository";
-import {annualPeriod,company,coverage,documents,enqueuePreparation,hash,parse,questionCacheKey,refreshQuestion,researchInstructions,researchAnswerSchema,seedResearch,stamp,synchronizeCompany,validateResearchAnswer,recoverVerifiedAnswer,normalizeResearchUsage,sourceVersion} from "./store";
+import {annualPeriod,company,coverage,documents,enqueuePreparation,hash,parse,questionCacheKey,refreshQuestion,researchInstructions,researchAnswerSchema,seedResearch,stamp,synchronizeCompany,validateResearchAnswer,recoverVerifiedAnswer,normalizeResearchUsage,sourceVersion,workerStatus} from "./store";
 import {seedResearchCompanies,type ResearchPassage} from "./types";
 import {researchTools} from "./tools";
 import {emptyWorkflow,saveWorkflow,readWorkflow,runWorkflowTools,planInstructions,planSchema} from './workflow';
@@ -30,7 +30,7 @@ export async function putArtifact(request:Request,jobId:string,digest:string,for
   return Response.json({key});
 }
 export async function researchWorkerAction(action:string,body:any){
-  const db=database(),now=stamp(),owner=environment().FINN_PRIVATE_CODEX_OWNER;
+  const db=database(),now=stamp(),owner=environment().FINN_PRIVATE_CODEX_OWNER,publicAI=environment().FINN_PUBLIC_AI==='1'?1:0;
   if(!owner)throw new Error("Research worker owner is not configured");
   if(action==="heartbeat"){
     const data={memoryAvailableMb:Number(body.memoryAvailableMb)||0,workerVersion:String(body.workerVersion||"").slice(0,40),modelEnabled:body.modelEnabled===true,lastChildPeakMb:Number(body.lastChildPeakMb)||0,modelRetryAt:typeof body.modelRetryAt==='string'&&Number.isFinite(Date.parse(body.modelRetryAt))?body.modelRetryAt:null,modelReason:body.modelReason?'ChatGPT capacity is temporarily unavailable. Saved answers and document preparation remain available.':null};
@@ -88,28 +88,28 @@ export async function researchWorkerAction(action:string,body:any){
     return {released:!!released,job:released};
   }
   if(action==="question/claim"){
-    const state=await db.prepare("SELECT model_ready,last_seen FROM research_worker WHERE id='vm'").first<any>();
-    if(!state||state.model_ready!==1||Date.now()-Date.parse(state.last_seen)>300000)return {question:null};
+    const state=await workerStatus();
+    if(!state.online||!state.modelReady)return {question:null};
     // Model work is user-requested only. Expired inference is not automatically
     // repeated, since that could consume subscription usage twice.
     await db.prepare("UPDATE research_questions SET status='error',error='Model worker stopped before a verified answer. Retry explicitly.',lease=NULL,lease_until=NULL,updated_at=? WHERE status='running' AND lease_until<?").bind(now,now).run();
     if(await db.prepare("SELECT id FROM research_questions WHERE status='running' LIMIT 1").first())return {question:null};
-    const candidates=await db.prepare("SELECT id FROM research_questions WHERE owner=? AND (status IN ('waiting_model','queued') OR (status='waiting_documents' AND EXISTS(SELECT 1 FROM research_documents d WHERE d.ticker=research_questions.ticker AND d.active_version IS NOT NULL))) ORDER BY updated_at,created_at LIMIT 5").bind(owner).all<{id:string}>();
-    for(const q of candidates.results)await refreshQuestion(q.id,owner);
+    const candidates=await db.prepare("SELECT id,owner FROM research_questions WHERE (?=1 OR owner=?) AND (status IN ('waiting_model','queued') OR (status='waiting_documents' AND EXISTS(SELECT 1 FROM research_documents d WHERE d.ticker=research_questions.ticker AND d.active_version IS NOT NULL))) ORDER BY updated_at,created_at LIMIT 5").bind(publicAI,owner).all<{id:string;owner:string}>();
+    for(const q of candidates.results)await refreshQuestion(q.id,q.owner);
     const lease=crypto.randomUUID();
-    const q=await db.prepare("UPDATE research_questions SET status='running',lease=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=(SELECT id FROM research_questions WHERE owner=? AND status='queued' AND attempts=0 ORDER BY created_at LIMIT 1) AND status='queued' AND NOT EXISTS(SELECT 1 FROM research_questions WHERE status='running') RETURNING *").bind(lease,new Date(Date.now()+240000).toISOString(),now,owner).first<any>();
+    const q=await db.prepare("UPDATE research_questions SET status='running',lease=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=(SELECT id FROM research_questions WHERE (?=1 OR owner=?) AND status='queued' AND attempts=0 ORDER BY created_at LIMIT 1) AND status='queued' AND NOT EXISTS(SELECT 1 FROM research_questions WHERE status='running') RETURNING *").bind(lease,new Date(Date.now()+240000).toISOString(),now,publicAI,owner).first<any>();
     if(!q)return {question:null};const context=await coverage(q.ticker);
     await saveWorkflow(q.id,emptyWorkflow());
     await db.prepare("UPDATE research_questions SET lease_until=? WHERE id=? AND lease=?").bind(new Date(Date.now()+900000).toISOString(),q.id,q.lease).run();
     return {question:{id:q.id,lease:q.lease,model:environment().FINN_PRIVATE_CODEX_MODEL,instructions:researchInstructions,outputSchema:researchAnswerSchema,planner:{instructions:planInstructions,outputSchema:planSchema},input:{company:context.company,question:q.question,filters:parse(q.filters,{}),coverage:{counts:context.counts,freshness:context.freshness,documents:context.documents.map(d=>({title:d.title,type:d.type,period:d.period,status:d.status}))},passages:parse(q.context,[])}}};
   }
   if(action==='question/tools'){
-    const q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND owner=? AND status='running' AND lease=? AND lease_until>?").bind(String(body.id||''),owner,String(body.lease||''),now).first<any>();
+    const q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND (?=1 OR owner=?) AND status='running' AND lease=? AND lease_until>?").bind(String(body.id||''),publicAI,owner,String(body.lease||''),now).first<any>();
     if(!q)throw new Error('Research question lease is missing or expired');
     return runWorkflowTools(q,body.plan);
   }
   if(action==="question/complete"||action==="question/failed"||action==='question/review'){
-    const q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND owner=? AND status='running' AND lease=? AND lease_until>?").bind(String(body.id||""),owner,String(body.lease||""),now).first<any>();
+    const q=await db.prepare("SELECT * FROM research_questions WHERE id=? AND (?=1 OR owner=?) AND status='running' AND lease=? AND lease_until>?").bind(String(body.id||""),publicAI,owner,String(body.lease||""),now).first<any>();
     if(!q)throw new Error("Research question lease is missing or expired");
     if(action.endsWith("failed")){
       if(body.reason==='usage_limit'&&typeof body.deferUntil==='string'&&Date.parse(body.deferUntil)>Date.now()&&Date.parse(body.deferUntil)<Date.now()+15*86400000){

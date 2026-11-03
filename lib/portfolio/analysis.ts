@@ -2,9 +2,9 @@ import {database} from "../repository";
 import {downloadFiling,extractFiling,type FilingContent} from "../filing-content";
 import {subscriptionAccess,authConfig} from "./chatgpt-auth";
 import {privateCodexConfig,enqueuePrivateAnalysis} from "./private-config";
-import {categories,type Filing,type FilingAnalysis,type Passage} from "./types";
+import {categories,type Filing,type FilingAnalysis,type Passage,type ReportedMetric} from "./types";
 import {monitoringRules,triggers} from "./monitor";
-import {analysisSchemaVersion,buildResultsComparison,validateMetricContext,validateReportPeriod,type ResultsReport} from "./results";
+import {analysisSchemaVersion,buildResultsComparison,financialPeriodAnchors,validateMetricContext,validateReportPeriod,type FiscalAnchor,type ResultsReport} from "./results";
 import {interpretationVersion} from './automatic';
 import {supportedClaimNumbers,portfolioInstructions} from './interpretation';
 const hosts=new Set(["nsearchives.nseindia.com","archives.nseindia.com","www.bseindia.com"]);
@@ -22,7 +22,7 @@ export function passagesFor(content:FilingContent):Passage[]{
   return result;
 }
 const normal=(text:string)=>text.replace(/\s+/g," ").trim();
-export function validateAnalysis(value:any,passages:Passage[],model:string,hash:string):FilingAnalysis{
+export function validateAnalysis(value:any,passages:Passage[],model:string,hash:string,anchorCandidates?:any[]):FilingAnalysis{
   if(!value||typeof value.summary!=="string"||value.summary.length>800||typeof value.whyItMatters!=="string"||value.whyItMatters.length>1000||!categories.includes(value.category)||!["high","medium","routine"].includes(value.priority)||!Array.isArray(value.claims)||value.claims.length<1||value.claims.length>10||!Array.isArray(value.metrics)||value.metrics.length>40)throw new Error("Model response did not match the analysis contract");
   const validate=(claim:any)=>{
     const p=passages.find(p=>p.id===claim.passageId);if(!p||typeof claim.quote!=="string"||normal(claim.quote).length<12||normal(claim.quote).length>1800||!normal(p.text).includes(normal(claim.quote))||typeof claim.text!=="string"||claim.text.length>1200)throw new Error("Model citation could not be located in the filing");
@@ -32,22 +32,26 @@ export function validateAnalysis(value:any,passages:Passage[],model:string,hash:
   // Summary and significance must each be present as a cited claim, not free
   // text outside the evidence contract. Interpretation is labelled in the UI.
   if(!value.claims.some((c:any)=>c.text===value.summary)||!value.claims.some((c:any)=>c.text===value.whyItMatters))throw new Error("Summary and significance need supporting passages");
-  for(const m of value.metrics){
+  const primary=validateReportPeriod(value.resultPeriod,passages);
+  const metric=(m:any,anchors:FiscalAnchor[]=[]):ReportedMetric=>{
     // Preserve entity names, restatement notes and accounting adjustments. A
     // compact label limit must not reject a correctly cited financial figure.
     if(!["Revenue","EBITDA","PBT","PAT"].includes(m.name)||!Number.isFinite(m.value)||!["INR crore","INR lakh","INR million","INR billion"].includes(m.unit)||typeof m.period!=="string"||m.period.length>80||typeof m.basis!=="string"||m.basis.length>512)throw new Error("Invalid reported financial metric");
     validate({...m,text:m.name});
     const numbers=normal(m.quote).replace(/,/g,"").replace(/\((\d+(?:\.\d+)?)\)/g,"-$1").replace(/[−–]/g,"-").match(/-?\d+(?:\.\d+)?/g)||[];
     if(!numbers.some(n=>Number(n)===m.value))throw new Error("Extracted financial number is absent from its source quote");
-    const context=validateMetricContext(m.context,m,passages),p=passages.find(p=>p.id===m.passageId)!;
+    const context=validateMetricContext(m.context,m,passages,anchors),p=passages.find(p=>p.id===m.passageId)!;
     const contextPassage=context?[context.passageId,...(context.evidenceRefs||[]).map(r=>r.passageId)].map(id=>passages.find(p=>p.id===id)?.text||'').join('\n'):'';
     const unit=m.unit.split(" ")[1],unitPattern=unit==="lakh"?"(?:lakh|lac)":unit==="million"?"(?:million|mn)":unit,currency="(?:₹|\\bINR\\b|\\bRs\\.?|\\brupees?\\b)";
     if(!new RegExp(`${currency}[\\s\\S]{0,60}\\b${unitPattern}s?\\b|\\b${unitPattern}s?\\b[\\s\\S]{0,60}${currency}`,"i").test(p.text+"\n"+contextPassage))throw new Error("Reported financial unit and currency are not supported by the filing");
-    m.context=context;
-  }
+    return {...m,context};
+  };
+  const explicit:ReportedMetric[]=[];for(const m of anchorCandidates?.length&&anchorCandidates.length<=40?anchorCandidates:value.metrics){try{explicit.push(metric(m));}catch{/* Only independently validated calendar-dated figures may anchor fiscal labels. */}}
+  const anchors=financialPeriodAnchors(explicit,primary,passages);
+  value.metrics=value.metrics.map((m:any)=>metric(m,anchors));
   if(value.executiveBackground!==null)validate(value.executiveBackground);
   const gaps=value.evidenceGaps||[];if(!Array.isArray(gaps)||gaps.length>6||gaps.some((g:any)=>typeof g!=='string'||g.length>400))throw new Error('Model evidence gaps are invalid');
-  return {schemaVersion:analysisSchemaVersion,promptVersion:interpretationVersion,resultPeriod:validateReportPeriod(value.resultPeriod,passages),summary:value.summary,whyItMatters:value.whyItMatters,category:value.category,priority:value.priority,claims:value.claims,metrics:value.metrics,executiveBackground:value.executiveBackground,evidenceGaps:gaps,model,contentHash:hash,createdAt:new Date().toISOString(),status:"generated"};
+  return {schemaVersion:analysisSchemaVersion,promptVersion:interpretationVersion,resultPeriod:primary,summary:value.summary,whyItMatters:value.whyItMatters,category:value.category,priority:value.priority,claims:value.claims,metrics:value.metrics,executiveBackground:value.executiveBackground,evidenceGaps:gaps,model,contentHash:hash,createdAt:new Date().toISOString(),status:"generated"};
 }
 export async function readResponseStream(response:Response){
   if(!response.ok){await response.body?.cancel();throw new Error(response.status===429?"ChatGPT usage limit reached. Analysis will retry later.":response.status===401?"ChatGPT authorization expired. Reconnect your account.":response.status===403?"This ChatGPT connection is not authorized for hosted model inference.":"The model provider could not complete this analysis.");}

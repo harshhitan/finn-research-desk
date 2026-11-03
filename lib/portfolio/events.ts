@@ -14,7 +14,7 @@ export function groupPortfolioEvents(filings:Filing[],analyses:Record<string,Fil
   for(const f of filings){const a=analyses[f.id],period=reportingEnd(f,a),results=!!period&&(f.category==='results'||f.category==='earnings_call'||/financial results|unaudited|audited|quarter.*results|earnings/i.test(f.title+' '+f.description)||a?.category==='results');const key=results?f.ticker+':results:'+period:f.id;const group=groups.get(key)||{period:results?period:null,filings:[]};group.filings.push(f);groups.set(key,group);}
   return [...groups.entries()].map(([id,g])=>{
     const members=[...g.filings].sort((a,b)=>b.publishedAt.localeCompare(a.publishedAt));
-    const quality=(f:Filing)=>{const a=analyses[f.id];return (a?.metrics.length?50:0)+(a?.resultPeriod?20:0)+(a?.sourceKind==='pdf'?10:0)+(a?5:0)+(/press release|financial results|outcome of board/i.test(f.title)?3:0);};
+    const quality=(f:Filing)=>{const a=analyses[f.id];return (a?.hasVerifiedFigures?100:0)+((a?.metricCount??a?.metrics.length)?50:0)+(a?.resultPeriod?20:0)+(a?.sourceKind==='pdf'?10:0)+(a?5:0)+(/press release|financial results|outcome of board/i.test(f.title)?3:0);};
     const primary=[...members].sort((a,b)=>quality(b)-quality(a)||b.publishedAt.localeCompare(a.publishedAt))[0],analysis=analyses[primary.id];
     const priority=[...members].map(f=>analyses[f.id]?.priority||f.priority).sort((a,b)=>rank[a]-rank[b])[0];
     const category=g.period?'results':analysis?.category||primary.category;

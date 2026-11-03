@@ -1,0 +1,23 @@
+[Unit]
+Description=FINN private document storage
+After=network.target
+
+[Service]
+User=azureuser
+Group=azureuser
+EnvironmentFile=/home/azureuser/finn-personal/storage.env
+ExecStart=/usr/bin/python3 -B /home/azureuser/finn-personal/storage/server.py
+Restart=on-failure
+RestartSec=5
+MemoryHigh=48M
+MemoryMax=64M
+TasksMax=16
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/finn-research/artifacts
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

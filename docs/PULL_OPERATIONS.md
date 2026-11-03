@@ -127,17 +127,15 @@ it. Do not loop model retries. Evidence remains available during provider failur
 For a source outage, use the existing preparation/status flow and its backoff;
 never restart work solely because a status observation timed out.
 
-## Evaluation and publication
+## Publication
 
-On the VM, `evaluate.py --output /var/lib/finn-research/evaluation.json` captures
-the 30 read-only source-review cases without calling a model. `--ticker` may be
-repeated for targeted checks. Review the actual passages and periods; nonempty
-retrieval is not acceptance. The checked-in final review explicitly preserves
-partial and missing evidence.
+Review actual source passages and periods before accepting an answer; nonempty
+retrieval alone is not evidence that a claim is supported. Keep missing or
+partially readable evidence visible in the interface.
 
 Publish source and an exact matching build archive through the Sites workflow,
-preserving owner-only access. If a save already returned a version/deployment ID,
+preserving the current access policy. If a save already returned a version/deployment ID,
 resume that operation instead of creating another. Roll back to a previously
 verified saved version if necessary; retain database history and historical PDFs.
-The root README documents fresh local setup and the checks; production and local
+The root README documents fresh local setup and build checks; production and local
 preview databases are independent.

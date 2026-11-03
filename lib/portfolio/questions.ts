@@ -5,20 +5,23 @@ import {digest} from './sources';
 import {resultsForFiling,passagesFor} from './analysis';
 import type {Filing,Passage} from './types';
 import type {ResearchPassage,ResearchCalculation} from '../research/types';
+import {portfolioAnalysisOwner} from './public-access';
 export const questionKey=(owner:string,id:string)=>'portfolio-question:'+owner+':'+id;
 export async function queueFilingQuestion(owner:string,filingId:string,question:string){
-  if(privateCodexConfig()?.owner!==owner)throw new Error('This account has no configured filing model');
+  const modelOwner=portfolioAnalysisOwner(owner);
+  if(privateCodexConfig()?.owner!==modelOwner)throw new Error('This account has no configured filing model');
   if(typeof question!=='string'||question.trim().length<5||question.length>600)throw new Error('Enter a filing question between 5 and 600 characters');
   const db=database(),row=await db.prepare('SELECT data FROM portfolio_filings WHERE id=?').bind(filingId).first<{data:string}>();if(!row)throw new Error('Unknown portfolio filing');
   const f=JSON.parse(row.data) as Filing,fingerprint=await filingFingerprint(f),key=await digest(JSON.stringify([owner,privateCodexConfig()!.model,filingId,fingerprint,question.trim().toLowerCase()])),id='q-'+key,prior=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind(questionKey(owner,id)).first<{data:string}>();
-  if(prior){const value=JSON.parse(prior.data);if(value.status==='done')return value;const job=await db.prepare('SELECT status FROM portfolio_private_jobs WHERE id=? AND owner=?').bind(id,owner).first<{status:string}>();if(job&&['queued','retry','running'].includes(job.status))return {...value,status:job.status};}
+  if(prior){const value=JSON.parse(prior.data);if(value.status==='done')return value;const job=await db.prepare('SELECT status FROM portfolio_private_jobs WHERE id=? AND owner=?').bind(id,modelOwner).first<{status:string}>();if(job&&['queued','retry','running'].includes(job.status))return {...value,status:job.status};}
   const prefix='portfolio-question:'+owner+':',recent=await db.prepare('SELECT COUNT(*) AS n FROM provider_cache WHERE key>=? AND key<? AND fetched_at>=?').bind(prefix,prefix+'\uffff',new Date(Date.now()-3600000).toISOString()).first<{n:number}>();if((recent?.n||0)>=20)throw new Error('Filing question limit reached; saved answers remain available');
+  const pending=await db.prepare("SELECT COUNT(*) AS n FROM portfolio_private_jobs WHERE owner=? AND content_hash LIKE 'question:%' AND status IN ('queued','running','retry')").bind(modelOwner).first<{n:number}>();if((pending?.n||0)>=50)throw new Error('The shared AI queue is busy. Please try again later.');
   const stamp=new Date().toISOString(),value={id,filingId,question:question.trim(),status:'queued',answer:null,context:[],created_at:stamp};
-  await db.prepare("INSERT INTO portfolio_private_jobs(id,owner,filing_id,content_hash,model,status,created_at,available_at) VALUES(?,?,?,?,?,'queued',?,?) ON CONFLICT(id) DO UPDATE SET status='queued',attempts=0,available_at=excluded.available_at,error=NULL").bind(id,owner,filingId,'question:'+fingerprint+':'+key,privateCodexConfig()!.model,stamp,stamp).run();
-  await writeInterpretationRequest(id,{mode:'manual',kind:'question',version:interpretationVersion,fingerprint,question:question.trim(),questionId:id,requestedAt:stamp,stage:'Queued for filing research'});
+  await db.prepare("INSERT INTO portfolio_private_jobs(id,owner,filing_id,content_hash,model,status,created_at,available_at) VALUES(?,?,?,?,?,'queued',?,?) ON CONFLICT(id) DO UPDATE SET status='queued',attempts=0,available_at=excluded.available_at,error=NULL").bind(id,modelOwner,filingId,'question:'+fingerprint+':'+key,privateCodexConfig()!.model,stamp,stamp).run();
+  await writeInterpretationRequest(id,{mode:'manual',kind:'question',questionOwner:owner,version:interpretationVersion,fingerprint,question:question.trim(),questionId:id,requestedAt:stamp,stage:'Queued for filing research'});
   await db.prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at').bind(questionKey(owner,id),JSON.stringify(value),stamp).run();return value;
 }
-export async function readFilingQuestion(owner:string,id:string){const db=database(),row=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind(questionKey(owner,id)).first<{data:string}>();if(!row)return null;const value=JSON.parse(row.data),job=await db.prepare('SELECT status,error FROM portfolio_private_jobs WHERE id=? AND owner=?').bind(id,owner).first<{status:string;error:string}>();return {...value,status:job?.status||value.status,error:job?.error||null};}
+export async function readFilingQuestion(owner:string,id:string){const db=database(),row=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind(questionKey(owner,id)).first<{data:string}>();if(!row)return null;const value=JSON.parse(row.data),job=await db.prepare('SELECT status,error FROM portfolio_private_jobs WHERE id=? AND owner=?').bind(id,portfolioAnalysisOwner(owner)).first<{status:string;error:string}>();return {...value,status:job?.status||value.status,error:job?.error||null};}
 export function questionPassages(f:Filing,passages:Passage[],hash:string,period=''):ResearchPassage[]{return passages.map(p=>({id:f.id+'#'+p.id,document_id:f.id,ticker:f.ticker,page:p.page,heading:f.title,text:p.text,title:f.title,period,type:'exchange_filing',source_url:f.attachmentUrl||f.sourceUrl,version_id:hash}));}
 export async function questionComparisons(owner:string,f:Filing,context:ResearchPassage[]){
   const result=await resultsForFiling(owner,f.id),calculations:ResearchCalculation[]=[];

@@ -6,6 +6,8 @@ export function privateCodexConfig(){
 }
 export async function privateCodexStatus(owner:string){
   const config=privateCodexConfig();if(!config||config.owner!==owner)return null;
+  const memory=(env as unknown as Record<string,any>).FINN_IN_MEMORY_WORKER_STATUS;
+  if(memory){const online=Date.now()-Date.parse(memory.lastSeen)<300000;return {configured:true,connected:online,mode:'private_codex',model:config.model,modelReady:online&&memory.modelReady===true,retryAt:memory.modelRetryAt||null,connectedAt:memory.lastSeen,reason:online?memory.modelReason||'The shared AI worker is online. Questions and interpretations run one at a time.':'The AI worker has not checked in recently. Saved answers remain available.'};}
   const state=await database().prepare("SELECT last_seen FROM portfolio_private_worker WHERE owner=?").bind(owner).first<{last_seen:string}>();
   const worker=await database().prepare('SELECT data,fetched_at FROM provider_cache WHERE key=?').bind('finn-model-availability:'+owner).first<{data:string;fetched_at:string}>(),shared=worker&&Date.now()-Date.parse(worker.fetched_at)<300000?JSON.parse(worker.data):null;
   const online=!!shared||!!state&&Date.now()-Date.parse(state.last_seen)<300000;

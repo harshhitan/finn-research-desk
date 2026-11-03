@@ -140,6 +140,8 @@ export async function synchronizeCompany(ticker:string,error:string|null=null){
   return {status,indexed:indexed.length};
 }
 export async function workerStatus(){
+  const memory=(env as unknown as Record<string,any>).FINN_IN_MEMORY_WORKER_STATUS;
+  if(memory){const online=Date.now()-Date.parse(memory.lastSeen)<300000;return {...memory,online,modelReady:online&&memory.modelReady===true};}
   const row=await database().prepare("SELECT * FROM research_worker WHERE id='vm'").first<any>();
   const online=!!row&&Date.now()-Date.parse(row.last_seen)<300000;
   return {online,modelReady:online&&row.model_ready===1,lastSeen:row?.last_seen||null,...parse<Record<string,unknown>>(row?.data,{})};
@@ -166,6 +168,10 @@ export async function askQuestion(owner:string,ticker:string,question:string,fil
   if(duplicate)return refreshQuestion(duplicate.id,owner);
   const recent=await db.prepare("SELECT COUNT(*) AS n FROM research_questions WHERE owner=? AND created_at>?").bind(owner,new Date(Date.now()-3600000).toISOString()).first<{n:number}>();
   if((recent?.n||0)>=20)throw new Error("Research question limit reached. Cached answers remain available; please try later.");
+  if(String((env as unknown as Record<string,string>).FINN_PUBLIC_AI)==='1'){
+    const pending=await db.prepare("SELECT COUNT(*) AS n FROM research_questions WHERE status IN ('waiting_documents','waiting_model','queued','running')").first<{n:number}>();
+    if((pending?.n||0)>=50)throw new Error('The shared AI queue is busy. Please try again later.');
+  }
   const docs=await documents(ticker);if(!docs.some(d=>d.active_version))await enqueuePreparation(ticker,owner);
   const id=crypto.randomUUID(),now=stamp();
   await db.prepare("INSERT INTO research_questions(id,owner,ticker,question,filters,context,source_version,cache_key,status,created_at,updated_at) VALUES(?,?,?,?,?,'[]',?,?,'waiting_documents',?,?)").bind(id,owner,ticker,question,JSON.stringify(filters),version,key,now,now).run();

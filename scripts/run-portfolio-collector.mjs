@@ -8,7 +8,8 @@ const input=JSON.parse(await new Promise((resolve,reject)=>{
   process.stderr.write('Ready for collector JSON on stdin (input is hidden).\n');
   process.stdin.setEncoding('utf8');process.stdin.on('data',read);process.stdin.once('end',end);process.stdin.resume();
 })),origin=new URL(input.url);
-if(origin.protocol!=='https:'||origin.hostname!=='finn-reliance-research-desk.anandharshitwork03.chatgpt.site'||origin.username||origin.password||origin.port)throw new Error('Unexpected FINN Site origin');
+const expected=process.env.FINN_RESEARCH_SITE_URL||'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site';
+if(origin.protocol!=='https:'||origin.origin!==expected||origin.pathname!=='/'||origin.search||origin.hash||origin.username||origin.password||origin.port)throw new Error('Unexpected FINN Site origin');
 if(typeof input.serviceToken!=='string'||!input.serviceToken)throw new Error('Site service access is required');
 const headers={'OAI-Sites-Authorization':`Bearer ${input.serviceToken}`,'X-Finn-Job-Token':input.serviceToken,'Content-Type':'application/json'};
 for(let i=0;i<Math.max(0,Math.min(15,input.maxCalls??10));i++){

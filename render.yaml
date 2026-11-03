@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: finn-research-desk
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build:render
+    startCommand: npm run start:render
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.0
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: '1'
+      - key: FINN_PUBLIC_AI
+        value: '1'
+      - key: FINN_SESSION_SECRET
+        generateValue: true
+      - key: FINN_ADMIN_TOKEN
+        generateValue: true
+      - key: FINN_MONITOR_JOB_TOKEN
+        generateValue: true
+      - key: FINN_PRIVATE_CODEX_OWNER
+        sync: false
+      - key: FINN_PRIVATE_CODEX_MODEL
+        value: gpt-6.1-sol
+      - key: DATABASE_URL
+        sync: false
+      - key: FINN_VM_STORAGE_URL
+        sync: false
+      - key: FINN_VM_STORAGE_TOKEN
+        sync: false

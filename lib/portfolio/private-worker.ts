@@ -10,7 +10,7 @@ import {questionKey,questionPassages,questionComparisons} from './questions';
 import {researchInstructions,researchAnswerSchema,validateResearchAnswer,recoverVerifiedAnswer} from '../research/store';
 import type {ResearchPassage,ResearchCalculation} from '../research/types';
 import {validateReportPeriod} from './results';
-import type {FilingAnalysis} from './types';
+import {resultEvidenceRevision,type FilingAnalysis} from './types';
 
 type Job={id:string;owner:string;filing_id:string;content_hash:string;model:string;attempts:number;lease:string;lease_until:string};
 type Evidence={content:FilingContent;sourceKind:'pdf'|'notice'|'market';fingerprint?:string;gaps:string[];passages:Passage[];questionContext?:ResearchPassage[];calculations?:ResearchCalculation[]};
@@ -22,6 +22,7 @@ async function saveEvidence(job:Job,value:Evidence){const stored={...value,conte
 async function request(job:Job):Promise<InterpretationRequest>{return await readInterpretationRequest(job.id)||{mode:'manual',kind:'filing',version:interpretationVersion,requestedAt:now()};}
 async function stage(job:Job,text:string,error:string|null=null){const value=await request(job);await writeInterpretationRequest(job.id,{...value,stage:text,error});await database().prepare("UPDATE portfolio_private_jobs SET lease_until=? WHERE id=? AND lease=? AND status='running'").bind(new Date(Date.now()+900000).toISOString(),job.id,job.lease).run();}
 async function payload(job:Job,value:Evidence,meta:InterpretationRequest){
+  await database().prepare("UPDATE provider_cache SET data=json_set(data,'$.evidenceRevision',?) WHERE key=?").bind(resultEvidenceRevision,'portfolio-request:'+job.id).run();
   const f=meta.kind==='market'?null:await filing(job.filing_id);
   if(meta.kind==='question'){
     value.questionContext=questionPassages(f!,value.passages,value.content.contentHash!);await saveEvidence(job,value);
@@ -44,7 +45,8 @@ export async function privateWorkerAction(action:string,body:any){
   if(action==='inspect'){
     if(typeof body.filingId!=='string'||body.filingId.length>100)throw new Error('Choose a filing to inspect');
     const f=await filing(body.filingId),row=await db.prepare('SELECT data FROM portfolio_analysis WHERE owner=? AND filing_id=?').bind(config.owner,f.id).first<{data:string}>(),pdf=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind('portfolio-pdf:'+f.id).first<{data:string}>(),content=pdf?JSON.parse(pdf.data) as FilingContent:null;
-    return {filing:f,analysis:row?JSON.parse(row.data):null,source:content?{contentHash:content.contentHash,pageCount:content.pageCount,passages:selectFilingPassages(passagesFor(content),typeof body.query==='string'?body.query.slice(0,300):'quarter consolidated revenue profit before tax net profit',12)}:null};
+    const review=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind('portfolio-review:'+config.owner+':'+f.id).first<{data:string}>();
+    return {filing:f,analysis:row?JSON.parse(row.data):null,comparison:await resultsForFiling(config.owner,f.id),lastRejectedDraft:review?JSON.parse(review.data):null,source:content?{contentHash:content.contentHash,pageCount:content.pageCount,passages:selectFilingPassages(passagesFor(content),typeof body.query==='string'?body.query.slice(0,300):'quarter consolidated revenue profit before tax net profit',12)}:null};
   }
   if(action==='recover-capacity'){
     // Operator recovery requires an audited incident, exact affected IDs and
@@ -137,12 +139,20 @@ export async function privateWorkerAction(action:string,body:any){
   }
   if(action==='review'){
     await stage(job,'Verifying citations and financial figures');
-    try{if(meta.kind==='question')validateResearchAnswer(body.analysis,e.questionContext||[],job.model,e.calculations||[]);else validateDraft(body.analysis,e,job.model);return {valid:true};}catch(error){return {valid:false,issue:(error as Error).message.slice(0,1000)};}
+    try{if(meta.kind==='question')validateResearchAnswer(body.analysis,e.questionContext||[],job.model,e.calculations||[]);else validateDraft(body.analysis,e,job.model);return {valid:true};}catch(error){
+      const issue=(error as Error).message.slice(0,1000);
+      if(meta.kind!=='question'){
+        const prefix='portfolio-review:'+job.owner+':',detail={jobId:job.id,checkedAt:now(),issue,...JSON.stringify(body.analysis||{}).length<=150000?{draft:body.analysis}:{draftOmitted:true}};
+        await db.prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at').bind(prefix+job.filing_id,JSON.stringify(detail),now()).run();
+        await db.prepare('DELETE FROM provider_cache WHERE key IN (SELECT key FROM provider_cache WHERE key>=? AND key<? ORDER BY fetched_at DESC LIMIT -1 OFFSET 50)').bind(prefix,prefix+'\uffff').run();
+      }
+      return {valid:false,issue};
+    }
   }
   if(action!=='complete')throw new Error('Model worker operation is unknown');
   try{
     if(meta.kind==='question'){
-      const answer=recoverVerifiedAnswer(body.analysis,e.questionContext||[],job.model,e.calculations||[]),key=questionKey(job.owner,meta.questionId!),row=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind(key).first<{data:string}>();if(!row)throw new Error('Filing question was not found');
+      const answer=recoverVerifiedAnswer(body.analysis,e.questionContext||[],job.model,e.calculations||[]),key=questionKey(meta.questionOwner||job.owner,meta.questionId!),row=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind(key).first<{data:string}>();if(!row)throw new Error('Filing question was not found');
       await db.prepare('UPDATE provider_cache SET data=?,fetched_at=? WHERE key=?').bind(JSON.stringify({...JSON.parse(row.data),answer,context:e.questionContext,status:'done'}),now(),key).run();await stage(job,'Answer and citations verified');await db.prepare("UPDATE portfolio_private_jobs SET status='done',finished_at=?,lease=NULL,lease_until=NULL,error=NULL WHERE id=? AND lease=?").bind(now(),job.id,job.lease).run();return {accepted:true};
     }
     let analysis;
@@ -154,12 +164,12 @@ export async function privateWorkerAction(action:string,body:any){
       validateDraft(candidate,e,job.model);
       if(e.sourceKind==='pdf'){
         try{candidate.resultPeriod=validateReportPeriod(body.analysis.resultPeriod,e.passages);}catch{/* Preserve only an independently evidenced primary period. */}
-        for(const metric of Array.isArray(body.analysis?.metrics)?body.analysis.metrics:[]){try{validateAnalysis({...candidate,metrics:[metric]},e.passages,job.model,e.content.contentHash!);candidate.metrics.push(metric);}catch{/* Only independently verified figures survive. */}}
+        for(const metric of Array.isArray(body.analysis?.metrics)?body.analysis.metrics:[]){try{const checked=validateAnalysis({...candidate,metrics:[metric]},e.passages,job.model,e.content.contentHash!,body.analysis.metrics);candidate.metrics.push(checked.metrics[0]);}catch{/* Only independently verified figures survive. */}}
         if(verifiedClaim(body.analysis.executiveBackground,e))candidate.executiveBackground=body.analysis.executiveBackground;
       }
       analysis=validateDraft(candidate,e,job.model);
     }
-    analysis={...analysis,inputFingerprint:e.fingerprint,sourceKind:e.sourceKind,evidenceGaps:[...new Set([...e.gaps,...(analysis.evidenceGaps||[])])].slice(0,6)};
+    analysis={...analysis,evidenceRevision:meta.evidenceRevision,inputFingerprint:e.fingerprint,sourceKind:e.sourceKind,evidenceGaps:[...new Set([...e.gaps,...(analysis.evidenceGaps||[])])].slice(0,6)};
     await persistVerifiedAnalysis(job.owner,job.filing_id,analysis);await stage(job,'Interpretation and citations verified');
     await db.prepare("UPDATE portfolio_private_jobs SET status='done',finished_at=?,lease=NULL,lease_until=NULL,error=NULL WHERE id=? AND lease=?").bind(now(),job.id,job.lease).run();return {accepted:true,filingId:job.filing_id,claims:analysis.claims.length,metrics:analysis.metrics.length};
   }catch(error){await failJob(job,error instanceof Error?error.message:undefined);throw error;}

@@ -27,22 +27,53 @@ export function validateReportPeriod(context:any,passages:Passage[]):ReportPerio
   if(context==null)return null;
   const passage=passages.find(p=>p.id===context.passageId);
   if(!passage||!validPeriodEnd(context.periodEnd)||![3,6,9,12].includes(context.durationMonths)||typeof context.quote!=="string"||context.quote.length>1800||!whitespace(passage.text).includes(whitespace(context.quote))||!supportsDate(context.quote,context.periodEnd))throw new Error("Reported financial period context is not supported by the filing");
-  const durationPatterns:Record<number,RegExp>={3:/\b(?:three|3)\s+months?\s+ended\b|\bquarter(?:\s+and\s+half[ -]year)?\s+ended\b/i,6:/\b(?:six|6)\s+months?\s+ended\b|\bhalf[ -]year\s+ended\b/i,9:/\b(?:nine|9)\s+months?\s+ended\b/i,12:/\b(?:twelve|12)\s+months?\s+ended\b|\b(?:financial\s+)?year\s+ended\b/i};
+  const durationPatterns:Record<number,RegExp>={3:/\b(?:three|3)\s+months?\s+ended\b|\bquarter(?:\s*\(\s*Q[1-4]\s*\))?(?:\s+and\s+(?:half[ -]year|(?:six|6)\s+months?|(?:financial\s+)?year))?\s+ended\b/i,6:/\b(?:six|6)\s+months?\s+ended\b|\bhalf[ -]year\s+ended\b/i,9:/\b(?:nine|9)\s+months?\s+ended\b/i,12:/\b(?:twelve|12)\s+months?\s+ended\b|\b(?:financial\s+)?year\s+ended\b/i};
   if(!durationPatterns[context.durationMonths].test(context.quote)||context.durationMonths===12&&/\bhalf[ -]year\s+ended\b/i.test(context.quote))throw new Error("Reported financial duration is not supported by its passage");
   return {periodEnd:context.periodEnd,durationMonths:context.durationMonths,passageId:context.passageId,quote:context.quote};
 }
-export function validateMetricContext(context:any,metric:ReportedMetric,passages:Passage[]):MetricContext|null {
+type FiscalQuarter={quarter:number;year:number;rank:number;label:string};
+export type FiscalAnchor={periodEnd:string;quarter:FiscalQuarter;entity:string;scope:string;dateEvidence:{passageId:string;quote:string};labelEvidence:{passageId:string;quote:string}};
+function fiscalQuarters(text:string){
+  return [...text.matchAll(/\b(?:Q([1-4])|([1-4])Q)\s*FY\s*(20\d{2}|\d{2})(?:\s*[-/]\s*(20\d{2}|\d{2}))?\b/gi)].flatMap(m=>{const q=Number(m[1]||m[2]),first=Number(m[3].length===2?'20'+m[3]:m[3]),year=m[4]?Number(m[4].length===2?'20'+m[4]:m[4]):first;if(m[4]&&year!==first+1)return [];return [{quarter:q,year,rank:year*4+q,label:'Q'+q+' FY'+year,index:m.index!}];});
+}
+function fiscalHeader(passages:Passage[],metric:ReportedMetric,target:FiscalQuarter,maximumRank:number){
+  const metricPage=passages.find(p=>p.id===metric.passageId)?.page;
+  for(const p of passages.filter(p=>p.page===metricPage))for(const match of fiscalQuarters(p.text).filter(q=>q.rank===target.rank)){
+    const quote=p.text.slice(Math.max(0,match.index-200),Math.min(p.text.length,match.index+650)),labels=fiscalQuarters(quote);
+    if(/\bforecast|\bprojected|\billustrative|\bpro forma|\bbudgeted|\bguidance/i.test(quote)||!labels.length||Math.max(...labels.map(q=>q.rank))!==maximumRank)continue;
+    return {passageId:p.id,quote};
+  }
+  return null;
+}
+// Anchor fiscal labels only to an independently validated current-quarter
+// figure and the filing's explicit primary calendar date. No assumed March
+// year-end, company memory, annual-to-quarter subtraction or forward periods.
+export function financialPeriodAnchors(metrics:ReportedMetric[],primary:ReportPeriod|null,passages:Passage[]):FiscalAnchor[]{
+  if(!primary||primary.durationMonths!==3)return [];
+  return metrics.flatMap(m=>{const c=m.context,labels=fiscalQuarters(m.period||'');if(!c||c.durationMonths!==3||c.periodEnd!==primary.periodEnd||labels.length!==1||Math.abs(labels[0].year-Number(primary.periodEnd.slice(0,4)))>1)return [];const labelEvidence=fiscalHeader(passages,m,labels[0],labels[0].rank);return labelEvidence?[{periodEnd:primary.periodEnd,quarter:labels[0],entity:c.entity,scope:c.scope,dateEvidence:{passageId:primary.passageId,quote:primary.quote},labelEvidence}]:[];});
+}
+export function validateMetricContext(context:any,metric:ReportedMetric,passages:Passage[],anchors:FiscalAnchor[]=[]):MetricContext|null {
   if(context==null)return null;
-  validateReportPeriod(context,passages);
+  let period:ReportPeriod,periodDerivation:MetricContext['periodDerivation'];
+  try{period=validateReportPeriod(context,passages)!;}catch(original){
+    const labels=typeof metric.period==='string'?fiscalQuarters(metric.period):[],applicable=anchors.filter(a=>typeof context.entity==='string'&&normalize(a.entity)===normalize(context.entity)&&a.scope===context.scope),unique=new Set(applicable.map(a=>a.quarter.rank+'|'+a.periodEnd));
+    if(context.durationMonths!==3||labels.length!==1||unique.size!==1)throw original;
+    const anchor=applicable[0],target=labels[0],distance=anchor.quarter.rank-target.rank,header=fiscalHeader(passages,metric,target,anchor.quarter.rank);
+    if(![0,1,4].includes(distance)||!header)throw original;
+    const periodEnd=priorEnd(anchor.periodEnd,3*distance);if(context.periodEnd&&context.periodEnd!==periodEnd)throw new Error('Fiscal quarter label does not support the proposed calendar end date');
+    const p=passages.find(p=>p.id===context.passageId);if(!p||typeof context.quote!=='string'||context.quote.length<12||context.quote.length>1800||!whitespace(p.text).includes(whitespace(context.quote)))throw original;
+    period={periodEnd,durationMonths:3,passageId:context.passageId,quote:context.quote};
+    periodDerivation={anchorEnd:anchor.periodEnd,anchorLabel:anchor.quarter.label,periodLabel:target.label,quarterDistance:distance,dateEvidence:anchor.dateEvidence,labelEvidence:header};
+  }
   const refs=context.evidenceRefs||[];if(!Array.isArray(refs)||refs.length>3)throw new Error('Reported financial context has too many evidence references');
   for(const ref of refs){const p=passages.find(p=>p.id===ref.passageId);if(!p||typeof ref.quote!=='string'||ref.quote.length<12||ref.quote.length>1800||!whitespace(p.text).includes(whitespace(ref.quote)))throw new Error('Reported financial context evidence is not in the filing');}
   const text=[context.quote,...refs.map((r:any)=>r.quote)].join('\n');
   if(!["consolidated","standalone"].includes(context.scope)||typeof context.entity!=="string"||context.entity.length<3||context.entity.length>180||!normalize(text).includes(normalize(context.entity))||typeof context.definition!=="string"||context.definition.length<3||context.definition.length>150||!new RegExp(`\\b${context.scope}\\b`,"i").test(text)||!normalize(text).includes(normalize(context.definition))||!normalize(metric.basis).includes(context.scope))throw new Error("Reported financial entity, definition or scope is not supported by its passage");
-  return {periodEnd:context.periodEnd,durationMonths:context.durationMonths,entity:context.entity,scope:context.scope,definition:context.definition,passageId:context.passageId,quote:context.quote,...refs.length?{evidenceRefs:refs}:{}};
+  return {periodEnd:period.periodEnd,durationMonths:period.durationMonths,entity:context.entity,scope:context.scope,definition:context.definition,passageId:context.passageId,quote:context.quote,...refs.length?{evidenceRefs:refs}:{},...periodDerivation?{periodDerivation}:{}};
 }
 
 export type ResultsReport={filing:Filing;analysis:FilingAnalysis};
-export type ResultPoint={name:ReportedMetric["name"];value:number;unit:string;periodEnd:string;durationMonths:number;entity:string;scope:string;definition:string;basis:string;inrCrore:number;conversionFactor:number;source:{filingId:string;ticker:string;url:string;publishedAt:string;contentHash:string;page:number;quote:string;contextPage:number;contextQuote:string;contextEvidence?:{page:number;quote:string}[]}};
+export type ResultPoint={name:ReportedMetric["name"];value:number;unit:string;periodEnd:string;durationMonths:number;entity:string;scope:string;definition:string;basis:string;inrCrore:number;conversionFactor:number;source:{filingId:string;ticker:string;url:string;publishedAt:string;contentHash:string;page:number;quote:string;contextPage:number;contextQuote:string;contextEvidence?:{page:number;quote:string}[];periodDerivation?:string}};
 export type GrowthComparison={status:"calculated"|"unavailable";targetPeriod:string;previous:ResultPoint|null;pct:number|null;reason:string|null;formula:string|null;inputs:{currentInrCrore:number;previousInrCrore:number}|null};
 export type ResultRow={name:ReportedMetric["name"];current:ResultPoint|null;reason:string|null;qoq:GrowthComparison;yoy:GrowthComparison};
 export type ResultsComparison={ticker:string;filingId:string;status:"ready"|"partial"|"unavailable";periodEnd:string|null;groups:{entity:string;scope:string;basis:string;rows:ResultRow[]}[];reason:string|null;policy:string;coverage?:{reportsConsidered:number;limit:number;truncated:boolean}};
@@ -54,7 +85,11 @@ function point(report:ResultsReport,metric:ReportedMetric):ResultPoint|null {
   if(!Number.isFinite(Date.parse(report.filing.publishedAt))||!Number.isFinite(metric.value*factors[metric.unit]))return null;
   const publishedDay=new Date(Date.parse(report.filing.publishedAt)+330*60000).toISOString().slice(0,10);
   if(c.periodEnd>publishedDay)return null;
-  return {name:metric.name,value:metric.value,unit:metric.unit,periodEnd:c.periodEnd,durationMonths:c.durationMonths,entity:c.entity,scope:c.scope,definition:c.definition,basis:metric.basis,inrCrore:metric.value*factors[metric.unit],conversionFactor:factors[metric.unit],source:{filingId:report.filing.id,ticker:report.filing.ticker,url:report.filing.attachmentUrl||report.filing.sourceUrl,publishedAt:report.filing.publishedAt,contentHash:report.analysis.contentHash,page:Number(metric.passageId.match(/^p(\d+)/)?.[1]||0),quote:metric.quote,contextPage:Number(c.passageId.match(/^p(\d+)/)?.[1]||0),contextQuote:c.quote,contextEvidence:(c.evidenceRefs||[]).map(r=>({page:Number(r.passageId.match(/^p(\d+)/)?.[1]||0),quote:r.quote}))}};
+  const contextEvidence=(c.evidenceRefs||[]).map(r=>({page:Number(r.passageId.match(/^p(\d+)/)?.[1]||0),quote:r.quote}));
+  const derived=c.periodDerivation;
+  if(derived)for(const ref of [derived.dateEvidence,derived.labelEvidence]){const page=Number(ref.passageId.match(/^p(\d+)/)?.[1]||0);if(!contextEvidence.some(r=>r.page===page&&r.quote===ref.quote))contextEvidence.push({page,quote:ref.quote});}
+  const periodDerivation=derived?`${derived.periodLabel} maps to ${c.periodEnd}: ${derived.quarterDistance} quarter(s) before ${derived.anchorLabel}, whose reporting end is ${derived.anchorEnd}.`:undefined;
+  return {name:metric.name,value:metric.value,unit:metric.unit,periodEnd:c.periodEnd,durationMonths:c.durationMonths,entity:c.entity,scope:c.scope,definition:c.definition,basis:metric.basis,inrCrore:metric.value*factors[metric.unit],conversionFactor:factors[metric.unit],source:{filingId:report.filing.id,ticker:report.filing.ticker,url:report.filing.attachmentUrl||report.filing.sourceUrl,publishedAt:report.filing.publishedAt,contentHash:report.analysis.contentHash,page:Number(metric.passageId.match(/^p(\d+)/)?.[1]||0),quote:metric.quote,contextPage:Number(c.passageId.match(/^p(\d+)/)?.[1]||0),contextQuote:c.quote,contextEvidence,periodDerivation}};
 }
 
 function priorEnd(value:string,monthsBack:number){const d=new Date(value+"T00:00:00Z");return new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()-monthsBack+1,0)).toISOString().slice(0,10);}

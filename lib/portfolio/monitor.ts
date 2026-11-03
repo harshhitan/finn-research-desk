@@ -5,6 +5,7 @@ import {ensurePortfolio,sourceState} from "./storage";
 import {nseFilings,quoteFor,digest,boundedText,rssUrl,parseNseRss,classify,safeAttachment} from "./sources";
 import {categories,type Filing,type MonitoringRules,type Quote} from "./types";
 import {queueAutomaticInterpretations} from './automatic';
+import {analysisBriefSql} from './projections';
 
 export const defaultMonitoringRules:Omit<MonitoringRules,"version">={enabled:true,priceThreshold:5,volumeThreshold:2,categories:["results","M&A","management_change","fund_raise","litigation","capex","credit_rating","pledging"],tickers:companies.map(c=>c.ticker),minimumPriority:"medium"};
 const rank={high:0,medium:1,routine:2};
@@ -94,13 +95,13 @@ export async function runJobs(limit=2,analyse?:(owner:string,filingId:string)=>P
   }finally{await db.prepare("DELETE FROM portfolio_locks WHERE name='collector' AND token=?").bind(token).run();}
   return {busy:false,processed};
 }
-export async function portfolioSnapshot(owner:string,from:string,to:string,ticker?:string){
+export async function portfolioSnapshot(owner:string,from:string,to:string,ticker?:string,analysisOwner=owner){
   const db=database();const [rules,prices,filings,sources,jobs,alerts,analyses]=await Promise.all([
     monitoringRules(owner),db.prepare("SELECT p.data FROM portfolio_prices p WHERE session_date=(SELECT MAX(session_date) FROM portfolio_prices WHERE ticker=p.ticker)").all<{data:string}>(),
     db.prepare("SELECT data FROM portfolio_filings WHERE published_at>=? AND published_at<=? AND (? IS NULL OR ticker=?) ORDER BY published_at DESC LIMIT 501").bind(from,to,ticker||null,ticker||null).all<{data:string}>(),
     db.prepare("SELECT * FROM portfolio_sources").all(),db.prepare("SELECT status,COUNT(*) AS count FROM portfolio_jobs WHERE kind='collect' GROUP BY status").all(),
     db.prepare("SELECT trigger_key,data,created_at,read_at FROM portfolio_alerts WHERE owner=? ORDER BY created_at DESC LIMIT 100").bind(owner).all<{trigger_key:string;data:string;created_at:string;read_at:string|null}>(),
-    db.prepare("SELECT a.filing_id,a.data FROM portfolio_analysis a LEFT JOIN portfolio_filings f ON f.id=a.filing_id WHERE a.owner=? AND ((f.published_at>=? AND f.published_at<=?) OR a.filing_id LIKE 'market:%') ORDER BY a.updated_at DESC LIMIT 500").bind(owner,from,to).all<{filing_id:string;data:string}>(),
+    db.prepare(`SELECT a.filing_id,${analysisBriefSql} AS data FROM portfolio_analysis a LEFT JOIN portfolio_filings f ON f.id=a.filing_id WHERE a.owner=? AND ((f.published_at>=? AND f.published_at<=?) OR a.filing_id LIKE 'market:%') ORDER BY a.updated_at DESC LIMIT 500`).bind(analysisOwner,from,to).all<{filing_id:string;data:string}>(),
   ]);
   const feed=filings.results.slice(0,500).map(r=>{const f=JSON.parse(r.data) as Filing;return {...f,...classify(f.title+" "+f.description)};}).sort((a,b)=>rank[a.priority]-rank[b.priority]||b.publishedAt.localeCompare(a.publishedAt));
   return {companies,quotes:prices.results.map(r=>JSON.parse(r.data)),filings:feed,window:{from,to,truncated:filings.results.length>500},sources:sources.results,jobs:jobs.results,rules,alerts:alerts.results.map(a=>({...JSON.parse(a.data),id:a.trigger_key,createdAt:a.created_at,readAt:a.read_at})),analyses:Object.fromEntries(analyses.results.map(a=>[a.filing_id,JSON.parse(a.data)])),serverTime:new Date().toISOString()};

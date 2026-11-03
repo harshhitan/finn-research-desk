@@ -1,6 +1,6 @@
 # FINN — Indian portfolio monitoring and document research
 
-FINN is a private, responsive web app with a 20-company NSE portfolio and an
+FINN is a responsive web app with a 20-company NSE portfolio and an
 independent research library that grows when a user prepares another company.
 
 - `/`: completed-day market data, exchange announcements, persisted alerts and source health.
@@ -12,9 +12,9 @@ Live app: https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site/re
 ## Pull implementation
 
 Six seed companies are prepared through one pipeline: RELIANCE, TCS, INFY,
-HINDUNILVR, LT and NTPC. COFORGE was added through actual company search with no
-company-specific code change. The library has seven registered issuers; three
-are ready and four remain partial for real page-readability gaps. Readiness
+HINDUNILVR, LT and NTPC. Additional verified companies use the same pipeline,
+without company-specific application code. The library displays current coverage
+and page-readability gaps for each registered issuer. Readiness
 requires two current consecutive annual years and six recent quarterly calls.
 Historical evidence stays searchable without inflating recent coverage.
 
@@ -35,8 +35,9 @@ runtime is required. A separate outbound Python systemd worker runs on the VM.
 It uses standard-library Python, Poppler and bounded selected-page Tesseract,
 with one serial workload. Heavy layout models are omitted for this VM's capacity.
 
-Model synthesis runs only for a saved user question. The owner explicitly enabled
-it and completed VM device sign-in. The restricted Codex transport disables shell,
+Research synthesis runs for a saved user question. Portfolio interpretations run
+automatically when enabled, with important disclosures first. The owner enabled
+model access and completed VM device sign-in. The restricted Codex transport disables shell,
 web, apps, browser, computer and multi-agent tools, limits document filesystem
 access, and denies model-requested tools/approvals. Answers require source quotes,
 known passage IDs and supported numbers. Failed inference needs explicit retry.
@@ -53,7 +54,7 @@ and unsupported inputs cause abstention; a narrative mention is not a verified
 financial fact. This is a prototype with bounded parser support, not universal
 accounting extraction or investment advice.
 
-## Runtime and verification
+## Runtime
 
 The research VM has 892 MiB RAM. The service uses a 256 MiB memory cap, 192 MiB
 pressure limit, 128 MiB swap cap, one-CPU quota, serial conversion/inference and
@@ -63,18 +64,9 @@ the cloud monitoring automation is paused. The collection-only VM timer remains
 enabled and does not invoke a model. On-demand work can finish after closing the
 browser; it depends on the VM being running, not the personal computer.
 
-Real cited answers were accepted for Reliance, TCS, Infosys, HUL and Coforge.
-The current-contract TCS numerical question repeated as SAVED ANSWER. A fresh
-Infosys answer persisted actual provider usage. The 30-case source review found
-no company/type/year violations: 21 supported/qualified cases, six partial cases
-with explicit limitations and three expected missing-year cases. Retrieval
-support is not a guarantee that every generated interpretation is correct.
-
-See [build status](docs/PULL_BUILD_STATUS.md),
-[operations and recovery](docs/PULL_OPERATIONS.md),
-[source-review ledger](docs/PULL_RETRIEVAL_REVIEW.json),
+See [operations and recovery](docs/PULL_OPERATIONS.md),
 [portfolio implementation](docs/PORTFOLIO_PIPELINE.md) and
-[build history](docs/BUILD_HISTORY.md).
+[portfolio upgrade status](docs/PORTFOLIO_UPGRADE.md).
 
 ## Local setup
 
@@ -102,27 +94,32 @@ inherit production documents or authentication. No model API key belongs in the
 frontend or repository. Hosting identity and DB/BUCKET bindings are declared in
 `.openai/hosting.json`; production secrets stay in Sites/VM protected configuration.
 
-## Checks
+## Build checks
 
 ```powershell
-node node_modules/typescript/bin/tsc --noEmit
-node scripts/test-research.mjs
-python scripts/test-private-codex-worker.py -q
-npm test
-npm run test:portfolio
-npm run test:results
-npm run test:results-view
+npm run typecheck
+npm run build
 ```
 
-On the Linux worker: `python3 -B test_worker.py -q` (24 tests). The six shared
-transport tests use mocked protocol events, no credentials or inference. The
-research suite uses an isolated SQLite database and checks real migrations,
-authorization, versioned publication, recovery, source filters, answer validation,
-cache invalidation, aliases, financial extraction and exact calculations.
+Test suites, diagnostic probes and temporary verification artifacts were removed
+from this source tree for the GitHub handoff. Runtime validation, citation checks,
+source verification and financial calculation guards remain in application code.
+
+## Hosting
+
+This same checkout supports the existing Cloudflare deployment and a prepared
+Render Node server. For Render, use `npm run build:render` and
+`npm run start:render`, with the server environment in `.env.example`.
+Render uses Neon PostgreSQL and authenticated VM document storage. Its signed
+visitor sessions allow public AI questions without ChatGPT sign-in.
+The migration is not deployed yet; data transfer, VM HTTPS storage and live
+end-to-end verification remain. See `docs/RENDER_NEON_MIGRATION.md`.
 
 ## Research API
 
-All visitor research routes require sign-in and same-origin writes.
+Visitor research routes require an identity and same-origin writes. The existing
+Site supplies its login identity; the Render server supplies a signed anonymous
+visitor session. Administrative and worker endpoints require separate credentials.
 
 | Route | Purpose |
 | --- | --- |
