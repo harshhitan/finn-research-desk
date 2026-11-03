@@ -2,7 +2,7 @@ import {database} from '../repository';
 import {hash,sourceVersion,stamp,parse} from './store';
 import type {ResearchPassage} from './types';
 
-export const factExtractor='financial-tables-4';
+export const factExtractor='financial-tables-5';
 export const financialMetrics={operating_cash_flow:'Net cash from operating activities',investing_cash_flow:'Net cash from investing activities',financing_cash_flow:'Net cash from financing activities',revenue_from_operations:'Revenue from operations',profit_for_year:'Reported profit for the period',profit_before_tax:'Profit before tax'};
 export type FinancialMetric=keyof typeof financialMetrics;
 export type FinancialScope='consolidated'|'standalone';
