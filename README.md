@@ -7,7 +7,7 @@ independent research library that grows when a user prepares another company.
 - `/research`: generic company preparation, indexed annual reports/calls, cited on-demand answers and financial comparisons.
 - `/research/reliance`: the preserved original Reliance desk, curated data and charts.
 
-Live app: https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site/research
+Live app: https://finn-research-desk.onrender.com/research
 
 ## Pull implementation
 
