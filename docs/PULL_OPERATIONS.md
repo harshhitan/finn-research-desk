@@ -30,15 +30,15 @@ credentials remain in the official VM account store. Never copy them to the
 Site, local computer, repository or another account. The current owner explicitly
 authorized this profile and completed sign-in.
 
-Model availability checks do not request inference. Inference claims only saved
-owner questions and explicitly requested portfolio filing analyses and is serial.
-Filing requests are marked in `provider_cache` under `portfolio-request:<job-id>`;
-legacy unmarked queue entries stay paused. Collection cannot create new AI requests.
-The same research worker claims both queues; the old portfolio model service must
-remain disabled. Filing validation failures or interrupted leases stop at `failed`
-and require an explicit retry. The optional profile permits official credential
-refresh; it does not enable scheduled model monitoring. Turning it off preserves
-stored answers and indexed evidence; unanswered requests wait for availability.
+Model availability checks do not request inference. Inference is serial and
+claims saved owner questions, requested filing analyses and owner-enabled
+automatic portfolio interpretations. Requests are marked in `provider_cache`
+under `portfolio-request:<job-id>`; legacy unmarked queue entries stay paused.
+Collection queues automatic work only while that independent setting is enabled;
+collection itself never calls a model. Manual failures require an explicit retry;
+automatic failures and interrupted leases retry at most three times. The optional
+profile permits official credential refresh. Turning it off preserves stored
+answers and indexed evidence; unanswered requests wait for availability.
 On 3 November 2026 the owner explicitly enabled proactive portfolio AI as a new
 scope. `portfolio-auto:<owner>` stores that independent enabled flag, routine
 notice preference and daily filing-attempt allowance. Important disclosures are

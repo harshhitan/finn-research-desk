@@ -16,7 +16,7 @@ export function classify(text:string):{category:Category;priority:Filing["priori
   const rules:[Category,RegExp,Filing["priority"]][]=[
     ["results",/financial results|quarterly results|audited results|unaudited results/i,"high"],
     ["M&A",/acquisition|amalgamation|merger|demerger|restructuring/i,"high"],
-    ["management_change",/chief .*officer|\bCFO\b|\bCEO\b|managing director|appointment.*director|resignation.*director|senior management/i,"high"],
+    ["management_change",/chief .*officer|\bCFO\b|\bCEO\b|managing director|(?:appointment|resignation|retirement|cessation).*(?:director|president|management|company secretary)|(?:director|president|company secretary).*(?:appointment|resignation|retirement|cessation)|senior management/i,"high"],
     ["fund_raise",/fund rais|fundrais|preferential|\bQIP\b|rights issue|issuance.*securit/i,"high"],
     ["litigation",/litigation|penalty|penalties|fine imposed|arbitration|court order|regulatory action|insolvency|\bNCLT\b|\bNCLAT\b|tribunal/i,"high"],
     ["credit_rating",/credit rating|rating.*revis|rating.*reaffirm/i,"medium"],

@@ -27,16 +27,18 @@ export async function queueAutomaticInterpretations(owner:string,filings:Filing[
   const settings=await interpretationSettings(owner);if(!settings.enabled||privateCodexConfig()?.owner!==owner)return {queued:0};
   const db=database(),now=new Date().toISOString(),model=privateCodexConfig()!.model;
   const [active,existing]=await Promise.all([
-    db.prepare("SELECT COUNT(*) AS n FROM portfolio_private_jobs j JOIN provider_cache p ON p.key='portfolio-request:'||j.id WHERE j.owner=? AND j.status IN ('queued','retry','running') AND json_extract(p.data,'$.mode')='automatic'").bind(owner).first<{n:number}>(),
+    db.prepare("SELECT j.id,j.status FROM portfolio_private_jobs j JOIN provider_cache p ON p.key='portfolio-request:'||j.id WHERE j.owner=? AND j.status IN ('queued','retry','running','failed') AND json_extract(p.data,'$.mode')='automatic'").bind(owner).all<{id:string;status:string}>(),
     db.prepare('SELECT filing_id,data FROM portfolio_analysis WHERE owner=? ORDER BY updated_at DESC LIMIT 800').bind(owner).all<{filing_id:string;data:string}>(),
   ]);
   const done=new Map(existing.results.map(r=>[r.filing_id,JSON.parse(r.data) as FilingAnalysis])),statements:D1PreparedStatement[]=[];
-  let room=Math.max(0,80-(active?.n||0)),queued=0;
+  const knownJobs=new Set(active.results.map(j=>j.id));
+  let room=Math.max(0,80-active.results.filter(j=>j.status!=='failed').length),queued=0;
   const rank={high:0,medium:1,routine:2};
   for(const f of [...filings].sort((a,b)=>rank[a.priority]-rank[b.priority]||b.publishedAt.localeCompare(a.publishedAt))){
     if(!room||f.priority==='routine'&&!settings.includeRoutine)continue;
     const prior=done.get(f.id),fingerprint=await filingFingerprint(f);if(prior?.promptVersion===interpretationVersion&&prior.model===model&&prior.inputFingerprint===fingerprint)continue;
     const id='auto-'+await digest(owner+'|'+model+'|'+f.id+'|'+fingerprint),request:InterpretationRequest={mode:'automatic',kind:'filing',priority:f.priority,version:interpretationVersion,fingerprint,requestedAt:now,stage:'Queued for interpretation'};
+    if(knownJobs.has(id))continue;
     statements.push(db.prepare("INSERT OR IGNORE INTO portfolio_private_jobs(id,owner,filing_id,content_hash,model,status,created_at,available_at) VALUES(?,?,?,?,?,'queued',?,?)").bind(id,owner,f.id,'auto:'+fingerprint,model,now,now));
     statements.push(db.prepare('INSERT OR IGNORE INTO provider_cache(key,data,fetched_at) VALUES(?,?,?)').bind(requestKey(id),JSON.stringify(request),now));queued++;room--;
   }
@@ -46,6 +48,7 @@ export async function queueAutomaticInterpretations(owner:string,filings:Filing[
     if(!(q.movePct!==null&&Math.abs(q.movePct)>=rule.priceThreshold||q.volumeMultiple!==null&&q.volumeMultiple>=rule.volumeThreshold))continue;
     const filingId=marketInterpretationId(q),fingerprint=await digest(JSON.stringify([interpretationVersion,q.ticker,q.sessionDate,q.close,q.movePct,q.volumeMultiple,rule.priceThreshold,rule.volumeThreshold]));if(done.get(filingId)?.promptVersion===interpretationVersion&&done.get(filingId)?.model===model&&done.get(filingId)?.inputFingerprint===fingerprint)continue;
     const id='auto-'+await digest(owner+'|'+model+'|'+filingId+'|'+fingerprint),request:InterpretationRequest={mode:'automatic',kind:'market',priority:'high',version:interpretationVersion,fingerprint,market:{ticker:q.ticker,sessionDate:q.sessionDate},requestedAt:now,stage:'Queued for market interpretation'};
+    if(knownJobs.has(id))continue;
     statements.push(db.prepare("INSERT OR IGNORE INTO portfolio_private_jobs(id,owner,filing_id,content_hash,model,status,created_at,available_at) VALUES(?,?,?,?,?,'queued',?,?)").bind(id,owner,filingId,'auto:'+fingerprint,model,now,now),db.prepare('INSERT OR IGNORE INTO provider_cache(key,data,fetched_at) VALUES(?,?,?)').bind(requestKey(id),JSON.stringify(request),now));room--;queued++;
   }
   for(let i=0;i<statements.length;i+=40)await db.batch(statements.slice(i,i+40));return {queued};

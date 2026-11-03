@@ -58,7 +58,7 @@ export async function handlePortfolio(request:Request){
     }
     if(path==="jobs"&&request.method==="GET"){const rows=await database().prepare("SELECT ticker,kind,status,attempts,created_at,finished_at,error FROM portfolio_jobs WHERE kind='collect' ORDER BY created_at DESC LIMIT 40").all();return json(rows.results);}
     const document=path.match(/^filings\/([a-zA-Z0-9-]+)\/content$/);
-    if(document&&request.method==="GET")return json(await portfolioDocument(document[1]));
+    if(document&&request.method==="GET")return json(await portfolioDocument(document[1],!!privateCodexConfig()));
     const filingMetadata=path.match(/^filings\/([a-zA-Z0-9-]+)$/);
     if(filingMetadata&&request.method==='GET'){const row=await database().prepare('SELECT data FROM portfolio_filings WHERE id=?').bind(filingMetadata[1]).first<{data:string}>();return row?json(JSON.parse(row.data)):json({error:'Filing not found.'},404);}
     const analysis=path.match(/^filings\/([a-zA-Z0-9-]+)\/analyse$/);

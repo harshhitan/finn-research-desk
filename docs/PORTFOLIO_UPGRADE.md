@@ -28,3 +28,38 @@ Completion requires current evidence for all of the following:
 
 Verification evidence will be recorded as implementation progresses. This file
 is a checklist, not a completion claim.
+
+## Release and verification, 3 November 2026
+
+- Initial private release: commit `cd7c6783385c07b03b30ed5b6bdf3c18abc67e64`,
+  deployment `appgdep_6ae972ae8b208191bd5cad08a1b9ff8c` succeeded at 05:36 UTC.
+  Sharing remains one owner, no external visitors.
+- Installed worker `research-2.14`, SHA-256
+  `ea8dda9b97067ccf9f5e3f788872182d0f235ffbdeb1fed9a877538ee6e92c47`.
+  All 29 Linux worker tests passed; the shared transport's six tests passed.
+  Automatic interpretation enabled with routine notices included and a daily
+  allowance of 100 attempts (IST reset). The old standalone model service and
+  cloud automation remain disabled; the source collector timer remains enabled.
+- Seven real completed-session market observations were interpreted and saved
+  automatically without an Analyse click. The latest observed worker had no
+  automatic restarts, no OOM or max-limit events, and about 192 MiB cgroup usage.
+- A real Fine Organic filing question completed on its first attempt. The answer
+  separated consolidated/standalone quarterly tables, identified acquisition
+  scope changes, and opened its supporting PDF passages. Repeating the same
+  question returned the cached answer rather than another model request.
+- Published checks verified alert save/snooze/restore, company-specific
+  developments, and the Reliance research deep link. Existing research still
+  reports its eight registered companies and online on-demand model.
+- SQLite/protocol tests cover automatic opt-in, owner isolation, stable identity,
+  priority and serial leases, source preparation, review before publication,
+  notice labelling, question isolation, deterministic comparisons, bounded
+  recovery, pause and IST daily allowances. SSR tests cover grouped cards,
+  Markdown, executive evidence, questions and alert actions. TypeScript passes.
+- Real local D1 testing caught long-prefix LIKE limits; prefix range queries
+  resolved the failure. A live-release follow-up fixes admission accounting so
+  existing pending jobs cannot displace new work, and makes the evidence drawer
+  read cached source text without starting PDF extraction in a web request.
+
+Initial backfill remains an observable queue, not a claim that every historical
+filing is already interpreted. Automatic financial-result verification and final
+published mobile checks are recorded below when completed.

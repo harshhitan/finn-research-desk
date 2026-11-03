@@ -8,9 +8,11 @@ import {analysisSchemaVersion,buildResultsComparison,validateMetricContext,valid
 import {interpretationVersion} from './automatic';
 import {supportedClaimNumbers,portfolioInstructions} from './interpretation';
 const hosts=new Set(["nsearchives.nseindia.com","archives.nseindia.com","www.bseindia.com"]);
-export async function portfolioDocument(id:string):Promise<FilingContent>{
-  const db=database(),row=await db.prepare("SELECT data FROM portfolio_filings WHERE id=?").bind(id).first<{data:string}>();if(!row)throw new Error("Unknown portfolio filing");const filing=JSON.parse(row.data) as Filing;if(!filing.attachmentUrl)throw new Error("The exchange did not provide an eligible PDF attachment");
-  const cache=await db.prepare("SELECT data,fetched_at FROM provider_cache WHERE key=?").bind(`portfolio-pdf:${id}`).first<{data:string;fetched_at:string}>();if(cache&&Date.now()-Date.parse(cache.fetched_at)<86400000)return JSON.parse(cache.data);
+export async function portfolioDocument(id:string,cacheOnly=false):Promise<FilingContent>{
+  const db=database(),row=await db.prepare("SELECT data FROM portfolio_filings WHERE id=?").bind(id).first<{data:string}>();if(!row)throw new Error("Unknown portfolio filing");const filing=JSON.parse(row.data) as Filing;
+  const cache=await db.prepare("SELECT data,fetched_at FROM provider_cache WHERE key=?").bind(`portfolio-pdf:${id}`).first<{data:string;fetched_at:string}>();if(cache&&(cacheOnly||Date.now()-Date.parse(cache.fetched_at)<86400000))return JSON.parse(cache.data);
+  if(cacheOnly)return {documentId:id,status:'unavailable',sourceUrl:filing.attachmentUrl||filing.sourceUrl,pages:[{page:0,text:filing.title+'\n'+filing.description}],extractedAt:new Date().toISOString(),reason:filing.attachmentUrl?'PDF text appears after the background worker reads the original. The exchange notice is available below.':'The exchange supplied no eligible PDF attachment. The original notice is available below.'};
+  if(!filing.attachmentUrl)throw new Error("The exchange did not provide an eligible PDF attachment");
   const result=await extractFiling(id,filing.attachmentUrl,await downloadFiling(filing.attachmentUrl,fetch,hosts));
   await db.prepare("INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at").bind(`portfolio-pdf:${id}`,JSON.stringify(result),new Date().toISOString()).run();return result;
 }

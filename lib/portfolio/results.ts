@@ -86,7 +86,7 @@ export function buildResultsComparison(filing:Filing,reports:ResultsReport[]):Re
   const points=eligible.flatMap(r=>r.analysis.metrics.map(m=>point(r,m)).filter((p):p is ResultPoint=>!!p));
   const currentPoints=points.filter(p=>p.source.filingId===filing.id),primary=eligible.find(r=>r.filing.id===filing.id)?.analysis.resultPeriod;
   const periodEnd=primary?.durationMonths===3&&validPeriodEnd(primary.periodEnd)?primary.periodEnd:null;
-  if(!periodEnd)return {...base,reason:"The primary reporting quarter is not verified. Connect an authorized model account and analyse the original results; an older comparison quarter will not be substituted."};
+  if(!periodEnd)return {...base,reason:"The primary reporting quarter is not verified yet. Comparisons need an evidenced reporting period and sourced figures from the original results."};
   const current=currentPoints.filter(p=>p.periodEnd===periodEnd),groupKey=(p:ResultPoint)=>`${normalize(p.entity)}|${p.scope}|${normalize(p.basis)}`,groupKeys=[...new Set(current.map(groupKey))];
   if(!current.length)return {...base,periodEnd,reason:"No verified headline figures are available for the filing's primary quarter. Earlier comparison periods have not been substituted."};
   const groups=groupKeys.map(key=>{
