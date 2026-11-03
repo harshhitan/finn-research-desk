@@ -9,6 +9,13 @@ export const interpretationDay=(time=Date.now())=>new Date(time+330*60000).toISO
 export type InterpretationSettings={enabled:boolean;dailyLimit:number;includeRoutine:boolean;updatedAt:string|null;usedToday?:number;resetsAt?:string};
 export type InterpretationRequest={mode:'automatic'|'manual';kind?:'filing'|'market'|'question';version:string;priority?:'high'|'medium'|'routine';fingerprint?:string;stage?:string;question?:string;questionId?:string;market?:{ticker:string;sessionDate:string};requestedAt:string;error?:string|null;attemptDay?:string};
 export async function interpretationAllowance(owner:string){const day=interpretationDay(),row=await database().prepare('SELECT data FROM provider_cache WHERE key=?').bind('portfolio-auto-usage:'+owner+':'+day).first<{data:string}>();return {usedToday:row?Number(JSON.parse(row.data).count)||0:0,resetsAt:day+'T18:30:00.000Z'};}
+export async function releaseAllowanceWait(owner:string){
+  const settings=await interpretationSettings(owner),allowance=await interpretationAllowance(owner);if(!settings.enabled||allowance.usedToday>=settings.dailyLimit)return;
+  const db=database(),stage='Daily automatic budget reached; waiting for the next allowance';await db.batch([
+    db.prepare("UPDATE portfolio_private_jobs SET available_at=? WHERE owner=? AND status='queued' AND EXISTS(SELECT 1 FROM provider_cache p WHERE p.key='portfolio-request:'||portfolio_private_jobs.id AND json_extract(p.data,'$.mode')='automatic' AND json_extract(p.data,'$.stage')=?)").bind(new Date().toISOString(),owner,stage),
+    db.prepare("UPDATE provider_cache SET data=json_set(data,'$.stage','Queued for interpretation') WHERE json_extract(data,'$.stage')=? AND key IN (SELECT 'portfolio-request:'||id FROM portfolio_private_jobs WHERE owner=? AND status='queued')").bind(stage,owner)
+  ]);
+}
 export const requestKey=(id:string)=>'portfolio-request:'+id;
 export async function interpretationSettings(owner:string):Promise<InterpretationSettings>{
   const row=await database().prepare('SELECT data FROM provider_cache WHERE key=?').bind('portfolio-auto:'+owner).first<{data:string}>();
@@ -18,7 +25,7 @@ export async function saveInterpretationSettings(owner:string,body:any){
   if(privateCodexConfig()?.owner!==owner)throw new Error('Automatic interpretation is not configured for this account');
   if(typeof body.enabled!=='boolean'||typeof body.includeRoutine!=='boolean'||!Number.isInteger(body.dailyLimit)||body.dailyLimit<10||body.dailyLimit>150)throw new Error('Choose an automatic analysis limit between 10 and 150');
   const value={enabled:body.enabled,includeRoutine:body.includeRoutine,dailyLimit:body.dailyLimit,updatedAt:new Date().toISOString()};
-  await database().prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at').bind('portfolio-auto:'+owner,JSON.stringify(value),value.updatedAt).run();return value;
+  await database().prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at').bind('portfolio-auto:'+owner,JSON.stringify(value),value.updatedAt).run();await releaseAllowanceWait(owner);return value;
 }
 export async function readInterpretationRequest(id:string):Promise<InterpretationRequest|null>{const row=await database().prepare('SELECT data FROM provider_cache WHERE key=?').bind(requestKey(id)).first<{data:string}>();return row?JSON.parse(row.data):null;}
 export async function writeInterpretationRequest(id:string,value:InterpretationRequest){await database().prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at').bind(requestKey(id),JSON.stringify(value),new Date().toISOString()).run();}

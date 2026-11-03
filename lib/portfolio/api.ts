@@ -16,7 +16,7 @@ export async function handlePortfolio(request:Request){
   try{
     const local=["127.0.0.1","localhost"].includes(url.hostname),identity=request.headers.get("oai-authenticated-user-id");
     const secret=(env as unknown as Record<string,string>).FINN_MONITOR_JOB_TOKEN;
-    const worker=path.match(/^private-worker\/(claim|complete|failed|settings|progress|evidence|prepared|tools|review|recover-capacity)$/);
+    const worker=path.match(/^private-worker\/(claim|complete|failed|settings|progress|evidence|prepared|tools|review|recover-capacity|inspect)$/);
     const unattended=(path==="jobs/run"&&request.method==="POST"||path==="jobs/status"&&request.method==="GET"||!!worker&&request.method==="POST")&&await equalSecret(request.headers.get("X-Finn-Job-Token")||"",secret||"");
     if(!identity&&!local&&!unattended)return json({error:"Sign in to FINN to access portfolio monitoring."},401);
     if(request.method!=="GET"&&!unattended){const origin=request.headers.get("origin");if(!origin||origin!==url.origin)return json({error:"A same-origin portfolio request is required."},403);}

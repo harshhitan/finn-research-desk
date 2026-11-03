@@ -91,3 +91,21 @@ The corrective release also separates call-recording notices from actual result
 filings before prioritisation, updates pending priorities without creating new
 jobs, and retains independently verified primary periods when another optional
 model detail fails validation.
+
+The corrective private deployment `appgdep_6ae9ada8488881919050e4e305aee65b`
+(source `17c33e9c3c5dbdebe1ee418692eb6998ddc298a5`) succeeded at 09:47:44 UTC.
+The installed 2.15 worker hash is
+`ee6f9fa84dcbb3aa2c3b5fb88f58b7628e140ad064e31788a3838cc9570fcc1f`.
+At 09:48:50 UTC, the audited incident receipt confirmed 33 recovered jobs and
+89 refunded rejections. The original 100-attempt setting was preserved; the
+published settings subsequently showed 13 used, with the worker online.
+
+Further control checks cover pausing previously queued routine notices, releasing
+budget-delayed jobs immediately when allowance is restored, and resuming daily
+cap waits at the actual next IST midnight. Protected `private-worker/inspect`
+returns one configured owner's filing analysis and bounded source excerpts for
+diagnosis, with no leases or general query capability.
+
+Completion is still unproven: the real financial cards inspected so far have
+source/validation gaps. A populated, source-verified comparison and final current
+mobile presentation must be checked before declaring this upgrade complete.

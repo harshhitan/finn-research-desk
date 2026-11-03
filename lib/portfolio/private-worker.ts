@@ -2,7 +2,7 @@ import {database} from "../repository";
 import {privateCodexConfig} from "./private-config";
 import {passagesFor,instructions,validateAnalysis,persistVerifiedAnalysis,resultsForFiling} from "./analysis";
 import {interpretationSchema,filingPlanner,noticeContent,selectFilingPassages,supportedClaimNumbers} from './interpretation';
-import {interpretationSettings,saveInterpretationSettings,primeAutomaticInterpretations,readInterpretationRequest,writeInterpretationRequest,filingFingerprint,interpretationVersion,interpretationDay,type InterpretationRequest} from './automatic';
+import {interpretationSettings,releaseAllowanceWait,saveInterpretationSettings,primeAutomaticInterpretations,readInterpretationRequest,writeInterpretationRequest,filingFingerprint,interpretationVersion,interpretationDay,type InterpretationRequest} from './automatic';
 import {digest} from './sources';
 import type {Filing,Passage,Quote} from './types';
 import type {FilingContent} from '../filing-content';
@@ -41,11 +41,16 @@ export async function privateWorkerAction(action:string,body:any){
   const db=database(),stamp=now();
   await db.prepare("INSERT INTO portfolio_private_worker(owner,last_seen) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET last_seen=excluded.last_seen").bind(config.owner,stamp).run();
   if(action==='settings')return saveInterpretationSettings(config.owner,body);
+  if(action==='inspect'){
+    if(typeof body.filingId!=='string'||body.filingId.length>100)throw new Error('Choose a filing to inspect');
+    const f=await filing(body.filingId),row=await db.prepare('SELECT data FROM portfolio_analysis WHERE owner=? AND filing_id=?').bind(config.owner,f.id).first<{data:string}>(),pdf=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind('portfolio-pdf:'+f.id).first<{data:string}>(),content=pdf?JSON.parse(pdf.data) as FilingContent:null;
+    return {filing:f,analysis:row?JSON.parse(row.data):null,source:content?{contentHash:content.contentHash,pageCount:content.pageCount,passages:selectFilingPassages(passagesFor(content),typeof body.query==='string'?body.query.slice(0,300):'quarter consolidated revenue profit before tax net profit',12)}:null};
+  }
   if(action==='recover-capacity'){
     // Operator recovery requires an audited incident, exact affected IDs and
     // rejected-attempt total. A durable receipt prevents repeating the refund.
     if(typeof body.incident!=='string'||!/^[a-z0-9:-]{12,80}$/.test(body.incident)||!/^20\d{2}-\d{2}-\d{2}$/.test(body.day)||!Array.isArray(body.ids)||body.ids.length<1||body.ids.length>50||new Set(body.ids).size!==body.ids.length||body.ids.some((id:any)=>typeof id!=='string'||!/^auto-[a-f0-9]{64}$/.test(id))||!Number.isInteger(body.rejectedAttempts)||body.rejectedAttempts<1)throw new Error('Invalid audited capacity recovery');
-    const key='portfolio-capacity-recovery:'+config.owner+':'+body.incident,prior=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind(key).first<{data:string}>();if(prior)return {...JSON.parse(prior.data),replayed:true};
+    const key='portfolio-capacity-recovery:'+config.owner+':'+body.incident,prior=await db.prepare('SELECT data FROM provider_cache WHERE key=?').bind(key).first<{data:string}>();if(prior){await releaseAllowanceWait(config.owner);return {...JSON.parse(prior.data),replayed:true};}
     if(await db.prepare("SELECT id FROM portfolio_private_jobs WHERE owner=? AND status='running' LIMIT 1").bind(config.owner).first())throw new Error('Stop the model worker before capacity recovery');
     const rows=await db.prepare(`SELECT j.id,j.attempts FROM portfolio_private_jobs j JOIN provider_cache p ON p.key='portfolio-request:'||j.id WHERE j.owner=? AND j.model=? AND j.id IN (${body.ids.map(()=>'?').join(',')}) AND j.status IN ('failed','queued','retry') AND j.attempts>0 AND json_extract(p.data,'$.mode')='automatic'`).bind(config.owner,config.model,...body.ids).all<{id:string;attempts:number}>();
     if(rows.results.length!==body.ids.length||rows.results.reduce((n,j)=>n+j.attempts,0)!==body.rejectedAttempts)throw new Error('Capacity recovery does not match the observed job attempts');
@@ -56,18 +61,18 @@ export async function privateWorkerAction(action:string,body:any){
       db.prepare("UPDATE provider_cache SET data=json_set(data,'$.count',json_extract(data,'$.count')-?) WHERE key=?").bind(body.rejectedAttempts,usageKey),
       db.prepare(`UPDATE portfolio_private_jobs SET status='queued',attempts=0,available_at=?,finished_at=NULL,lease=NULL,lease_until=NULL,error=NULL WHERE owner=? AND id IN (${body.ids.map(()=>'?').join(',')})`).bind(stamp,config.owner,...body.ids),
       db.prepare(`UPDATE provider_cache SET data=json_set(data,'$.stage','Queued after verified capacity recovery','$.error',NULL) WHERE key IN (${body.ids.map(()=>'?').join(',')})`).bind(...body.ids.map((id:string)=>'portfolio-request:'+id))
-    ]);return receipt;
+    ]);await releaseAllowanceWait(config.owner);return receipt;
   }
   if(action==='claim'){
     await primeAutomaticInterpretations(config.owner);
     await db.prepare("UPDATE portfolio_private_jobs SET status=CASE WHEN attempts<3 AND EXISTS(SELECT 1 FROM provider_cache p WHERE p.key='portfolio-request:'||portfolio_private_jobs.id AND json_extract(p.data,'$.mode')='automatic') THEN 'retry' ELSE 'failed' END,available_at=?,lease=NULL,lease_until=NULL,error='Analysis interrupted; retry is available' WHERE owner=? AND status='running' AND lease_until<?").bind(stamp,config.owner,stamp).run();
     const settings=await interpretationSettings(config.owner),lease=crypto.randomUUID();
-    const job=await db.prepare("UPDATE portfolio_private_jobs SET status='running',attempts=attempts+1,lease=?,lease_until=?,error=NULL WHERE id=(SELECT j.id FROM portfolio_private_jobs j JOIN provider_cache p ON p.key='portfolio-request:'||j.id LEFT JOIN portfolio_filings f ON f.id=j.filing_id WHERE j.owner=? AND j.model=? AND j.status IN ('queued','retry') AND j.available_at<=? AND (json_extract(p.data,'$.mode') IS NOT 'automatic' OR ?=1) AND NOT EXISTS(SELECT 1 FROM portfolio_private_jobs WHERE owner=? AND status='running') ORDER BY CASE WHEN json_extract(p.data,'$.kind')='question' THEN 0 WHEN json_extract(p.data,'$.mode')='automatic' THEN 2 ELSE 1 END,CASE COALESCE(json_extract(p.data,'$.priority'),json_extract(f.data,'$.priority')) WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(f.published_at,j.created_at) DESC LIMIT 1) RETURNING *").bind(lease,new Date(Date.now()+900000).toISOString(),config.owner,config.model,stamp,settings.enabled?1:0,config.owner).first<Job>();
+    const job=await db.prepare("UPDATE portfolio_private_jobs SET status='running',attempts=attempts+1,lease=?,lease_until=?,error=NULL WHERE id=(SELECT j.id FROM portfolio_private_jobs j JOIN provider_cache p ON p.key='portfolio-request:'||j.id LEFT JOIN portfolio_filings f ON f.id=j.filing_id WHERE j.owner=? AND j.model=? AND j.status IN ('queued','retry') AND j.available_at<=? AND (json_extract(p.data,'$.mode') IS NOT 'automatic' OR ?=1) AND (json_extract(p.data,'$.mode') IS NOT 'automatic' OR ?=1 OR COALESCE(json_extract(p.data,'$.priority'),json_extract(f.data,'$.priority'))!='routine') AND NOT EXISTS(SELECT 1 FROM portfolio_private_jobs WHERE owner=? AND status='running') ORDER BY CASE WHEN json_extract(p.data,'$.kind')='question' THEN 0 WHEN json_extract(p.data,'$.mode')='automatic' THEN 2 ELSE 1 END,CASE COALESCE(json_extract(p.data,'$.priority'),json_extract(f.data,'$.priority')) WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(f.published_at,j.created_at) DESC LIMIT 1) RETURNING *").bind(lease,new Date(Date.now()+900000).toISOString(),config.owner,config.model,stamp,settings.enabled?1:0,settings.includeRoutine?1:0,config.owner).first<Job>();
     if(!job)return {job:null};
     const meta=await request(job);
     if(meta.mode==='automatic'){
       const usage=await db.prepare("INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,'{\"count\":1}',?) ON CONFLICT(key) DO UPDATE SET data=json_set(provider_cache.data,'$.count',COALESCE(json_extract(provider_cache.data,'$.count'),0)+1),fetched_at=excluded.fetched_at WHERE COALESCE(json_extract(provider_cache.data,'$.count'),0)<? RETURNING data").bind('portfolio-auto-usage:'+config.owner+':'+interpretationDay(),stamp,settings.dailyLimit).first();
-      if(!usage){await db.prepare("UPDATE portfolio_private_jobs SET status='queued',attempts=MAX(0,attempts-1),lease=NULL,lease_until=NULL,available_at=? WHERE id=?").bind(new Date(Date.now()+3600000).toISOString(),job.id).run();await writeInterpretationRequest(job.id,{...meta,stage:'Daily automatic budget reached; waiting for the next allowance'});return {job:null};}
+      if(!usage){await db.prepare("UPDATE portfolio_private_jobs SET status='queued',attempts=MAX(0,attempts-1),lease=NULL,lease_until=NULL,available_at=? WHERE id=?").bind(interpretationDay()+'T18:30:00.000Z',job.id).run();await writeInterpretationRequest(job.id,{...meta,stage:'Daily automatic budget reached; waiting for the next allowance'});return {job:null};}
       meta.attemptDay=interpretationDay();await writeInterpretationRequest(job.id,meta);
     }
     try{
