@@ -4,6 +4,7 @@ import {companies,companyByTicker} from "./companies";
 import {ensurePortfolio,sourceState} from "./storage";
 import {nseFilings,quoteFor,digest,boundedText,rssUrl,parseNseRss,classify,safeAttachment} from "./sources";
 import {categories,type Filing,type MonitoringRules,type Quote} from "./types";
+import {queueAutomaticInterpretations} from './automatic';
 
 export const defaultMonitoringRules:Omit<MonitoringRules,"version">={enabled:true,priceThreshold:5,volumeThreshold:2,categories:["results","M&A","management_change","fund_raise","litigation","capex","credit_rating","pledging"],tickers:companies.map(c=>c.ticker),minimumPriority:"medium"};
 const rank={high:0,medium:1,routine:2};
@@ -35,7 +36,7 @@ export async function seedPortfolio(){if(!seeded)seeded=(async()=>{await ensureP
 export async function enqueueCollection(force=false){
   const db=database(),now=new Date(),bucket=Math.floor(now.getTime()/(15*60000));
   for(const c of companies){const prior=await db.prepare("SELECT last_success FROM portfolio_sources WHERE ticker=? AND source='NSE announcements'").bind(c.ticker).first<{last_success:string}>();if(!force&&prior?.last_success&&now.getTime()-Date.parse(prior.last_success)<14*60000)continue;
-    await db.prepare("INSERT OR IGNORE INTO portfolio_jobs(id,ticker,kind,status,created_at,available_at) SELECT ?,?,'collect','queued',?,? WHERE NOT EXISTS(SELECT 1 FROM portfolio_jobs WHERE ticker=? AND kind='collect' AND status IN ('queued','retry','running'))").bind(`collect:${c.ticker}:${bucket}`,c.ticker,now.toISOString(),now.toISOString(),c.ticker).run();
+    await db.prepare("INSERT OR IGNORE INTO portfolio_jobs(id,ticker,kind,status,created_at,available_at) SELECT ?,?,'collect','queued',?,? WHERE NOT EXISTS(SELECT 1 FROM portfolio_jobs WHERE ticker=? AND kind='collect' AND status IN ('queued','retry','running'))").bind(`collect:${c.ticker}:${bucket}${force?':manual:'+Math.floor(now.getTime()/60000):''}`,c.ticker,now.toISOString(),now.toISOString(),c.ticker).run();
   }
 }
 export async function storeFilings(filings:Filing[]){
@@ -73,14 +74,7 @@ async function collect(ticker:string){
     }catch{await sourceState(ticker,"NSE announcements",false,"Previous records retained; new disclosures may be missing","Both exchange API and RSS unavailable; retry scheduled");}
   }
   await evaluate(ticker,quote,fresh);
-  // Analysis is queued only for users who explicitly connected a model account.
-  const accounts=await db.prepare("SELECT owner FROM portfolio_accounts").all<{owner:string}>();
-  const personal=privateCodexConfig();if(personal&&!accounts.results.some(a=>a.owner===personal.owner))accounts.results.push({owner:personal.owner});
-  for(const {owner} of accounts.results){const rules=await monitoringRules(owner);if(!rules.enabled||!rules.tickers.includes(ticker))continue;
-    for(const f of fresh.filter(f=>f.attachmentUrl&&f.priority!=="routine"&&rules.categories.includes(f.category)&&Date.parse(f.publishedAt)>Date.now()-86400000).slice(0,5)){
-      const now=new Date().toISOString();await db.prepare("INSERT OR IGNORE INTO portfolio_jobs(id,ticker,kind,status,created_at,available_at,payload) VALUES(?,?,'analyse','queued',?,?,?)").bind(`analyse:${await digest(owner)}:${f.id}`,ticker,now,now,JSON.stringify({owner,filingId:f.id})).run();
-    }
-  }
+  const autoOwner=privateCodexConfig()?.owner;if(autoOwner)await queueAutomaticInterpretations(autoOwner,fresh,quote?[quote]:[]);
   if(failures.length)throw new Error(failures.join("; "));
 }
 export async function runJobs(limit=2,analyse?:(owner:string,filingId:string)=>Promise<unknown>,options:{kind?:"collect"}={}){
@@ -104,9 +98,9 @@ export async function portfolioSnapshot(owner:string,from:string,to:string,ticke
   const db=database();const [rules,prices,filings,sources,jobs,alerts,analyses]=await Promise.all([
     monitoringRules(owner),db.prepare("SELECT p.data FROM portfolio_prices p WHERE session_date=(SELECT MAX(session_date) FROM portfolio_prices WHERE ticker=p.ticker)").all<{data:string}>(),
     db.prepare("SELECT data FROM portfolio_filings WHERE published_at>=? AND published_at<=? AND (? IS NULL OR ticker=?) ORDER BY published_at DESC LIMIT 501").bind(from,to,ticker||null,ticker||null).all<{data:string}>(),
-    db.prepare("SELECT * FROM portfolio_sources").all(),db.prepare("SELECT status,COUNT(*) AS count FROM portfolio_jobs GROUP BY status").all(),
+    db.prepare("SELECT * FROM portfolio_sources").all(),db.prepare("SELECT status,COUNT(*) AS count FROM portfolio_jobs WHERE kind='collect' GROUP BY status").all(),
     db.prepare("SELECT trigger_key,data,created_at,read_at FROM portfolio_alerts WHERE owner=? ORDER BY created_at DESC LIMIT 100").bind(owner).all<{trigger_key:string;data:string;created_at:string;read_at:string|null}>(),
-    db.prepare("SELECT filing_id,data FROM portfolio_analysis WHERE owner=? ORDER BY updated_at DESC LIMIT 100").bind(owner).all<{filing_id:string;data:string}>(),
+    db.prepare("SELECT a.filing_id,a.data FROM portfolio_analysis a LEFT JOIN portfolio_filings f ON f.id=a.filing_id WHERE a.owner=? AND ((f.published_at>=? AND f.published_at<=?) OR a.filing_id LIKE 'market:%') ORDER BY a.updated_at DESC LIMIT 500").bind(owner,from,to).all<{filing_id:string;data:string}>(),
   ]);
   const feed=filings.results.slice(0,500).map(r=>{const f=JSON.parse(r.data) as Filing;return {...f,...classify(f.title+" "+f.description)};}).sort((a,b)=>rank[a.priority]-rank[b.priority]||b.publishedAt.localeCompare(a.publishedAt));
   return {companies,quotes:prices.results.map(r=>JSON.parse(r.data)),filings:feed,window:{from,to,truncated:filings.results.length>500},sources:sources.results,jobs:jobs.results,rules,alerts:alerts.results.map(a=>({...JSON.parse(a.data),id:a.trigger_key,createdAt:a.created_at,readAt:a.read_at})),analyses:Object.fromEntries(analyses.results.map(a=>[a.filing_id,JSON.parse(a.data)])),serverTime:new Date().toISOString()};

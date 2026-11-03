@@ -11,6 +11,38 @@ import worker
 
 
 class WorkerTests(unittest.TestCase):
+    def test_filing_preparation_finishes_before_model_work_and_uses_exchange_sources(self):
+        with tempfile.TemporaryDirectory() as path:
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path));calls=[]
+            job={'id':'f','lease':'lease','sourceUrl':'https://nsearchives.nseindia.com/source.pdf'}
+            def api(action,body):
+                calls.append((action,body))
+                return {'job':{'id':'f','lease':'lease','input':{'passages':[]}}} if action=='prepared' else {'accepted':True}
+            instance.filing_api=api
+            with patch.object(worker,'download',return_value=(Path(path)/'source.pdf','a'*64)),patch.object(worker,'iter_pages',return_value=iter([(2,1,'Primary filing text '*10),(2,2,'Second filing page '*10)])):
+                result=instance.prepare_filing(job)
+            self.assertEqual(result['id'],'f');self.assertEqual([c[0] for c in calls],['evidence','prepared']);self.assertEqual(calls[-1][1]['pageCount'],2)
+            calls.clear()
+            instance.prepare_filing({**job,'sourceUrl':'https://private.invalid/source.pdf'})
+            self.assertEqual(calls[0][0],'prepared');self.assertTrue(calls[0][1]['unavailable'])
+            instance.cache.close()
+
+    def test_filing_question_uses_portfolio_tools_and_review_without_research_queue_mutation(self):
+        with tempfile.TemporaryDirectory() as path:
+            instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path));calls=[]
+            class Client:
+                last_usage=None
+                def analyse(self,request):return {'objective':'Inspect revenue','queries':['Revenue quarter ended'],'includeHistory':True}
+            def api(action,body):
+                calls.append(action)
+                if action=='tools':return {'passages':[{'id':'source'}],'calculations':[{'id':'calc-source'}],'evidenceGaps':[]}
+                return {'valid':True}
+            instance.filing_api=api
+            job={'id':'q','lease':'l','model':'model','kind':'filing_question','instructions':'Cited answer','planner':{'instructions':'Plan','outputSchema':{}},'input':{'question':'Revenue growth?','passages':[]}}
+            final,usage=instance.filing_workflow(Client(),job)
+            self.assertEqual(final['input']['passages'][0]['id'],'source');self.assertEqual(final['input']['calculations'][0]['id'],'calc-source')
+            instance.review_answer(Client(),final,{'summary':'Answer'},usage);self.assertEqual(calls,['tools','review']);instance.cache.close()
+
     def test_final_review_repairs_once_without_publishing_rejected_draft(self):
         with tempfile.TemporaryDirectory() as path:
             instance=worker.Worker({'url':worker.SITE,'serviceToken':'test-only-token'},Path(path))

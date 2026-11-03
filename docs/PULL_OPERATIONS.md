@@ -39,6 +39,16 @@ remain disabled. Filing validation failures or interrupted leases stop at `faile
 and require an explicit retry. The optional profile permits official credential
 refresh; it does not enable scheduled model monitoring. Turning it off preserves
 stored answers and indexed evidence; unanswered requests wait for availability.
+On 3 November 2026 the owner explicitly enabled proactive portfolio AI as a new
+scope. `portfolio-auto:<owner>` stores that independent enabled flag, routine
+notice preference and daily filing-attempt allowance. Important disclosures are
+processed before routine notices, with cached results and at most three attempts.
+The same serial research service now prepares exchange PDFs in bounded page
+batches, retrieves relevant evidence, interprets, reviews and optionally repairs
+the result. Explicit research/filing questions take priority. Automatic work can
+be paused independently in Portfolio → AI settings; saved answers remain usable.
+No cloud LLM automation or second model service is required.
+
 The old `finn-personal-worker.service` remains disabled. The collection-only
 `finn-collector.timer` is independent and must not be replaced with an LLM timer.
 

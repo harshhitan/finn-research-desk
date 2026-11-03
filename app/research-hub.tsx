@@ -57,6 +57,7 @@ export default function ResearchHub(){
   async function loadCoverage(selected=ticker){try{const next=await api<Coverage>('/companies/'+encodeURIComponent(selected));if(current.current===selected){setCoverage(next);connectionRecovered('coverage');}}catch{if(current.current===selected)connectionFailed('coverage');}}
 
   useEffect(()=>{loadLibrary();const timer=setInterval(loadLibrary,20000);return()=>clearInterval(timer);},[]);
+  useEffect(()=>{const requested=new URLSearchParams(location.search).get('ticker')?.toUpperCase();if(!requested||!/^[A-Z0-9&-]{1,25}$/.test(requested))return;setTicker(requested);api<Coverage>('/companies/'+encodeURIComponent(requested)).catch(async()=>{try{const value=await api<{company:ResearchCompany}>('/companies/prepare','POST',{ticker:requested});setTicker(value.company.ticker);await loadLibrary();}catch(e){setError((e as Error).message);}});},[]);
 
   useEffect(()=>{setCoverage(null);setResult(null);setPassages([]);setEvidenceSearched(false);setHistory([]);setError('');connectionRecovered('coverage');connectionRecovered('question');loadCoverage(ticker);},[ticker]);
 

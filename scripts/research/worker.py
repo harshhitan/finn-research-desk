@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 
 SITE = 'https://finn-reliance-research-desk.anandharshitwork03.chatgpt.site'
-VERSION = 'research-2.13'
+VERSION = 'research-2.14'
 PARSER = 'poppler-layout-pages-v2'
 CALL_POLICY = 'quarterly-dialogue-2'
 DISCOVERY_POLICY = 'primary-links-3'
@@ -791,16 +791,18 @@ class Worker:
         client, value, stage = None, None, 'transport'
         try:
             client = module.Codex('/home/azureuser/.local/bin/codex', str(work))
-            if question.get('planner') and question.get('kind') != 'filing':
+            if question.get('planner') and question.get('kind') in ('filing','filing_question'):
+                question, usage = self.filing_workflow(client, question)
+            elif question.get('planner') and question.get('kind') != 'filing':
                 question, usage = self.research_workflow(client, question)
             else:
                 usage = []
             value = client.analyse(question)
             usage.append(getattr(client,'last_usage',None))
-            if question.get('planner') and question.get('kind') != 'filing':
+            if question.get('planner') or question.get('kind') in ('filing','filing_question') and question.get('outputSchema'):
                 value=self.review_answer(client,question,value,usage)
             stage='validation'
-            if question.get('kind') == 'filing':
+            if question.get('kind') in ('filing','filing_question'):
                 self.filing_api('complete', {'id':question['id'],'lease':question['lease'],'analysis':value})
             else:
                 self.api('question/complete', {'id': question['id'], 'lease': question['lease'], 'answer': value, 'usage':self.total_usage(usage)})
@@ -813,7 +815,8 @@ class Worker:
             os.chdir(previous)
 
     def review_answer(self,client,question,value,usage):
-        review=self.api('question/review',{'id':question['id'],'lease':question['lease'],'answer':value})
+        is_filing=question.get('kind') in ('filing','filing_question')
+        review=(self.filing_api('review',{'id':question['id'],'lease':question['lease'],'analysis':value}) if is_filing else self.api('question/review',{'id':question['id'],'lease':question['lease'],'answer':value}))
         if review.get('valid') is True:
             return value
         repair={**question,'input':{**question['input'],'rejectedDraft':value,'validationIssue':review.get('issue','Evidence validation failed')}}
@@ -821,6 +824,43 @@ class Worker:
         value=client.analyse(repair)
         usage.append(getattr(client,'last_usage',None))
         return value
+
+    def prepare_filing(self, job):
+        identity={'id':job['id'],'lease':job['lease']}
+        try:
+            url=urllib.parse.urlsplit(job['sourceUrl'])
+            if url.scheme!='https' or url.hostname not in ('nsearchives.nseindia.com','archives.nseindia.com','www.bseindia.com'):
+                raise ResearchError('Filing source is not an approved exchange host')
+            with tempfile.TemporaryDirectory(prefix='filing-',dir=self.state) as path:
+                directory=Path(path)
+                pdf,digest=download(job['sourceUrl'],directory)
+                batch=[];size=0;total_pages=0;clipped=False;unreadable=0
+                for total,page,text in iter_pages(pdf,directory):
+                    total_pages=total
+                    if page>200 or size+len(text)>850000:
+                        clipped=True;break
+                    if len(text)>70000:
+                        text=text[:70000];clipped=True
+                    if len(text.strip())<40:unreadable+=1
+                    batch.append({'page':page,'text':text});size+=len(text)
+                    if len(batch)>=4 or sum(len(p['text']) for p in batch)>90000:
+                        self.filing_api('evidence',{**identity,'pages':batch});batch=[]
+                if batch:self.filing_api('evidence',{**identity,'pages':batch})
+                return self.filing_api('prepared',{**identity,'contentHash':digest,'pageCount':total_pages,'clipped':clipped,'unreadablePages':unreadable}).get('job')
+        except (ResearchError,urllib.error.URLError,TimeoutError,OSError):
+            # An unavailable attachment must not become fabricated PDF evidence.
+            # Preserve an explicitly labelled interpretation of the real notice.
+            return self.filing_api('prepared',{**identity,'unavailable':True}).get('job')
+
+    def filing_workflow(self,client,question):
+        plan=client.analyse({'model':question['model'],'instructions':question['planner']['instructions'],
+            'outputSchema':question['planner']['outputSchema'],'input':question['input']})
+        usage=[getattr(client,'last_usage',None)]
+        response=self.filing_api('tools',{'id':question['id'],'lease':question['lease'],'plan':plan})
+        final={**question,'input':{**question['input'],'passages':response['passages'],
+            'researchPlan':plan.get('objective',''),'evidenceGaps':response.get('evidenceGaps',[]),
+            'calculations':response.get('calculations',[]),'verifiedComparisons':response.get('comparison')}}
+        return final,usage
 
     @staticmethod
     def total_usage(records):
@@ -901,12 +941,16 @@ class Worker:
                 question=self.filing_api('claim',{}).get('job')
                 if not question:
                     return False
-                question={**question,'kind':'filing'}
+                if question.get('prepare'):
+                    question=self.prepare_filing(question)
+                if not question:
+                    return False
+                question={**question,'kind':question.get('kind','filing')}
             self.answer(question)
         except Exception:
             if question:
                 with contextlib.suppress(Exception):
-                    if question.get('kind') == 'filing':
+                    if question.get('kind') in ('filing','filing_question'):
                         self.filing_api('failed',{'id':question['id'],'lease':question['lease']})
                     else:
                         self.api('question/failed',{'id':question['id'],'lease':question['lease']})

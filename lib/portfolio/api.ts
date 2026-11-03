@@ -5,6 +5,9 @@ import {analyseFiling,portfolioDocument,resultsForFiling} from "./analysis";
 import {subscriptionStatus,startSubscription,finishSubscription,disconnectSubscription} from "./chatgpt-auth";
 import {privateWorkerAction} from "./private-worker";
 import {privateCodexConfig} from "./private-config";
+import {interpretationSettings,saveInterpretationSettings,queueAutomaticInterpretations,readInterpretationRequest} from './automatic';
+import {alertInteraction,alertStates} from './interactions';
+import {queueFilingQuestion,readFilingQuestion} from './questions';
 const clearedCookie="finn_chatgpt_oauth=; HttpOnly; Secure; SameSite=Lax; Path=/api/portfolio/chatgpt; Max-Age=0";
 async function equalSecret(a:string,b:string){if(!a||!b)return false;const hash=async(s:string)=>new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s)));const [aa,bb]=await Promise.all([hash(a),hash(b)]);let value=0;for(let i=0;i<aa.length;i++)value|=aa[i]^bb[i];return value===0;}
 export async function handlePortfolio(request:Request){
@@ -13,7 +16,7 @@ export async function handlePortfolio(request:Request){
   try{
     const local=["127.0.0.1","localhost"].includes(url.hostname),identity=request.headers.get("oai-authenticated-user-id");
     const secret=(env as unknown as Record<string,string>).FINN_MONITOR_JOB_TOKEN;
-    const worker=path.match(/^private-worker\/(claim|complete|failed)$/);
+    const worker=path.match(/^private-worker\/(claim|complete|failed|settings|progress|evidence|prepared|tools|review)$/);
     const unattended=(path==="jobs/run"&&request.method==="POST"||path==="jobs/status"&&request.method==="GET"||!!worker&&request.method==="POST")&&await equalSecret(request.headers.get("X-Finn-Job-Token")||"",secret||"");
     if(!identity&&!local&&!unattended)return json({error:"Sign in to FINN to access portfolio monitoring."},401);
     if(request.method!=="GET"&&!unattended){const origin=request.headers.get("origin");if(!origin||origin!==url.origin)return json({error:"A same-origin portfolio request is required."},403);}
@@ -31,12 +34,19 @@ export async function handlePortfolio(request:Request){
       const now=new Date(),from=url.searchParams.get("from")||new Date(now.getTime()-86400000).toISOString(),to=url.searchParams.get("to")||now.toISOString(),ticker=url.searchParams.get("ticker")||undefined;
       if(!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to))||Date.parse(from)>Date.parse(to)||Date.parse(to)-Date.parse(from)>366*86400000)return json({error:"Choose a valid window of up to one year."},400);
       const snapshot=await portfolioSnapshot(who.owner,new Date(from).toISOString(),new Date(to).toISOString(),ticker);
-      const privateJobs=privateCodexConfig()?.owner===who.owner?(await database().prepare("SELECT filing_id,status,error,created_at,EXISTS(SELECT 1 FROM provider_cache p WHERE p.key='portfolio-request:'||j.id) AS requested FROM portfolio_private_jobs j WHERE owner=? ORDER BY created_at DESC LIMIT 100").bind(who.owner).all()).results:[];
-      return json({...snapshot,privateJobs,subscription:await subscriptionStatus(who.owner)});
+      const automatic=await interpretationSettings(who.owner);
+      if(automatic.enabled){await database().prepare('INSERT INTO provider_cache(key,data,fetched_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at').bind('portfolio-auto-window:'+who.owner,JSON.stringify({from:new Date(from).toISOString(),to:new Date(to).toISOString()}),new Date().toISOString()).run();await queueAutomaticInterpretations(who.owner,snapshot.filings,snapshot.quotes);}
+      const privateJobs=privateCodexConfig()?.owner===who.owner?(await database().prepare("SELECT j.id,j.filing_id,j.status,j.error,j.created_at,EXISTS(SELECT 1 FROM provider_cache p WHERE p.key='portfolio-request:'||j.id) AS requested,json_extract(p.data,'$.mode') AS mode,json_extract(p.data,'$.stage') AS stage FROM portfolio_private_jobs j LEFT JOIN provider_cache p ON p.key='portfolio-request:'||j.id WHERE owner=? ORDER BY created_at DESC LIMIT 600").bind(who.owner).all()).results:[];
+      return json({...snapshot,privateJobs,automatic,alertStates:await alertStates(who.owner),subscription:await subscriptionStatus(who.owner)});
+    }
+    if(path==='interpretation/settings'&&request.method==='PUT')return json(await saveInterpretationSettings(who.owner,await request.json()));
+    if(path==='interpretation/retry'&&request.method==='POST'){
+      const body:any=await request.json(),job=await database().prepare("SELECT id FROM portfolio_private_jobs WHERE id=? AND owner=? AND status='failed'").bind(String(body.id||''),who.owner).first<{id:string}>();if(!job)return json({error:'This interpretation is not available to retry.'},400);
+      await database().prepare("UPDATE portfolio_private_jobs SET status='queued',attempts=0,error=NULL,available_at=? WHERE id=? AND owner=?").bind(new Date().toISOString(),job.id,who.owner).run();return json({queued:true});
     }
     if(path==="rules"&&request.method==="PUT"){const body=await request.text();if(body.length>16000)return json({error:"Request is too large"},413);try{return json(await saveMonitoringRules(who.owner,JSON.parse(body)));}catch{return json({error:"Use price thresholds of 0.1–50%, volume of 1–20× and known portfolio companies/categories."},400);}}
-    if(path==="refresh"&&request.method==="POST"){await monitoringRules(who.owner);await enqueueCollection();return json({queued:true,...await runJobs(2,analyseFiling)});}
-    if(path==="jobs/tick"&&request.method==="POST")return json(await runJobs(2,analyseFiling));
+    if(path==="refresh"&&request.method==="POST"){await monitoringRules(who.owner);const body=await request.text(),force=body?JSON.parse(body).force===true:false;await enqueueCollection(force);return json({queued:true,...await runJobs(2,undefined,{kind:"collect"})});}
+    if(path==="jobs/tick"&&request.method==="POST")return json(await runJobs(2,undefined,{kind:"collect"}));
     if(path==="jobs/run"&&request.method==="POST"){
       if(!unattended)return json({error:"Unattended collector authorization is required."},403);
       await enqueueCollection();return json({...await runJobs(4,collectionOnly?undefined:analyseFiling,{kind:kind||undefined}),jobKind:kind||"all",remaining:(await database().prepare("SELECT COUNT(*) AS count FROM portfolio_jobs WHERE status IN ('queued','retry','running') AND (? IS NULL OR kind=?)").bind(kind,kind).first<{count:number}>())?.count||0,checkedAt:new Date().toISOString()});
@@ -49,11 +59,18 @@ export async function handlePortfolio(request:Request){
     if(path==="jobs"&&request.method==="GET"){const rows=await database().prepare("SELECT ticker,kind,status,attempts,created_at,finished_at,error FROM portfolio_jobs WHERE kind='collect' ORDER BY created_at DESC LIMIT 40").all();return json(rows.results);}
     const document=path.match(/^filings\/([a-zA-Z0-9-]+)\/content$/);
     if(document&&request.method==="GET")return json(await portfolioDocument(document[1]));
+    const filingMetadata=path.match(/^filings\/([a-zA-Z0-9-]+)$/);
+    if(filingMetadata&&request.method==='GET'){const row=await database().prepare('SELECT data FROM portfolio_filings WHERE id=?').bind(filingMetadata[1]).first<{data:string}>();return row?json(JSON.parse(row.data)):json({error:'Filing not found.'},404);}
     const analysis=path.match(/^filings\/([a-zA-Z0-9-]+)\/analyse$/);
     if(analysis&&request.method==="POST")return json(await analyseFiling(who.owner,analysis[1],true));
+    const filingQuestion=path.match(/^filings\/([a-zA-Z0-9-]+)\/questions$/);
+    if(filingQuestion&&request.method==='POST'){const body:any=await request.json();return json(await queueFilingQuestion(who.owner,filingQuestion[1],body.question),202);}
+    const question=path.match(/^questions\/(q-[a-f0-9]{64})$/);
+    if(question&&request.method==='GET'){const value=await readFilingQuestion(who.owner,question[1]);return value?json(value):json({error:'Filing question was not found.'},404);}
     const results=path.match(/^filings\/([a-zA-Z0-9-]+)\/results$/);
     if(results&&request.method==="GET")return json(await resultsForFiling(who.owner,results[1]));
     if(path==="alerts/read"&&request.method==="POST"){await database().prepare("UPDATE portfolio_alerts SET read_at=? WHERE owner=? AND read_at IS NULL").bind(new Date().toISOString(),who.owner).run();return json({read:true});}
+    if(path==='alerts/action'&&request.method==='POST')return json(await alertInteraction(who.owner,await request.json()));
     if(path==="chatgpt/status"&&request.method==="GET")return json(await subscriptionStatus(who.owner));
     if(path==="chatgpt/start"&&request.method==="GET"){
       const start=await startSubscription(who.owner,request);return new Response(null,{status:303,headers:{Location:start.url,"Set-Cookie":start.cookie,"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
@@ -66,6 +83,7 @@ export async function handlePortfolio(request:Request){
   }catch(error){
     // Do not log callback URLs, tokens, provider bodies, or decoded credentials.
     const message=error instanceof Error?error.message:"";
+    if(['localhost','127.0.0.1'].includes(url.hostname)&&path==='')console.error('Portfolio local snapshot:',message);
     const safe=/^(Hosted ChatGPT|Connect ChatGPT|ChatGPT |This ChatGPT|An analysis|The model|Model |No readable|Unknown portfolio|The exchange|This PDF|This document|This source|Extracted|Invalid reported|Reported financial|Summary and significance)/.test(message);
     return json({error:safe?message:"Portfolio processing could not finish. Source health and retry status remain available."},503);
   }
